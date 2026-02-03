@@ -1,0 +1,70 @@
+{
+  "name": "@openserv-labs/client",
+  "version": "1.0.0",
+  "description": "OpenServ Platform Client - Manage agents, workflows, tasks, and triggers via the OpenServ API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check-types": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm run lint && npm run check-types",
+    "prepare": "npm run build",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,json,md}\"",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:unit": "node --import tsx --test test/unit/**/*.test.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openserv-labs/client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/openserv-labs/client/issues"
+  },
+  "homepage": "https://github.com/openserv-labs/client#readme",
+  "keywords": [
+    "openserv",
+    "api",
+    "client",
+    "platform",
+    "workflows",
+    "agents",
+    "typescript"
+  ],
+  "author": "OpenServ Labs",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.8",
+    "ethers": "^6.16.0",
+    "viem": "^2.45.1",
+    "x402-fetch": "^1.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@tsconfig/strictest": "^2.0.3",
+    "@types/node": "^22.10.2",
+    "dotenv": "^16.4.5",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.1.3",
+    "prettier": "^3.2.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.4.2",
+    "typescript-eslint": "^8.33.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
