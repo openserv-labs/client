@@ -621,7 +621,7 @@ async function provisionWorkflow(
         triggerId,
         position: { x: 0, y: 100 },
         inputPorts: [] as { id: string }[],
-        outputPorts: [{ id: "output" }],
+        outputPorts: [{ id: "default" }],
         isEndNode: false as const,
       },
       {
@@ -630,7 +630,7 @@ async function provisionWorkflow(
         taskId,
         position: { x: 300, y: 100 },
         inputPorts: [{ id: "input" }],
-        outputPorts: [{ id: "output" }],
+        outputPorts: [{ id: "default" }],
         isEndNode: true,
       },
     ];
@@ -640,7 +640,7 @@ async function provisionWorkflow(
         id: `edge-${triggerId}-${taskId}`,
         source: triggerNodeId,
         target: taskNodeId,
-        sourcePort: "output",
+        sourcePort: "default",
         targetPort: "input",
       },
     ];

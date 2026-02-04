@@ -369,7 +369,7 @@ export class WorkflowsAPI {
             triggerId,
             position: { x: 0, y: 0 },
             inputPorts: [],
-            outputPorts: [{ id: "output", name: "Output" }],
+            outputPorts: [{ id: "default", name: "Output" }],
           });
         }
       }
@@ -385,7 +385,7 @@ export class WorkflowsAPI {
             taskId,
             position: { x: 200, y: 0 },
             inputPorts: [{ id: "input", name: "Input" }],
-            outputPorts: [{ id: "output", name: "Output" }],
+            outputPorts: [{ id: "default", name: "Output" }],
           });
         }
       }
@@ -399,7 +399,7 @@ export class WorkflowsAPI {
             id: `edge-${i}`,
             source: sourceNode,
             target: targetNode,
-            sourcePort: "output",
+            sourcePort: "default",
             targetPort: "input",
           });
         });
@@ -418,7 +418,7 @@ export class WorkflowsAPI {
               id: `edge-auto-${i}`,
               source: `trigger-${trigger.name}`,
               target: `task-${firstTaskName}`,
-              sourcePort: "output",
+              sourcePort: "default",
               targetPort: "input",
             });
           });
