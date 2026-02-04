@@ -372,7 +372,8 @@ export class WorkflowsAPI {
       // Add task nodes - use the same IDs from taskIdMap
       if (config.tasks) {
         for (const t of config.tasks) {
-          const taskId = taskIdMap.get(t.name) || t.id || taskNameToId.get(t.name) || 0;
+          const taskId =
+            taskIdMap.get(t.name) || t.id || taskNameToId.get(t.name) || 0;
           nodes.push({
             id: `task-${t.name}`,
             type: "task",
