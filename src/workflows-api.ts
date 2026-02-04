@@ -317,13 +317,18 @@ export class WorkflowsAPI {
 
     // Build tasks array with IDs
     // Create a consistent mapping for task IDs - use unique negative IDs for new tasks
+    // Start from a large negative number and increment toward 0 to preserve order when sorted
+    // Negative IDs are safe because they can never collide with real database IDs
     const taskIdMap = new Map<string, number>();
-    let newTaskIdCounter = 0;
+    let newTaskIdCounter = -1000000;
     if (config.tasks) {
       for (const t of config.tasks) {
         const existingId = t.id || taskNameToId.get(t.name);
-        // Use decrementing negative IDs for new tasks so each is unique
-        taskIdMap.set(t.name, existingId || --newTaskIdCounter);
+        if (existingId) {
+          taskIdMap.set(t.name, existingId);
+        } else {
+          taskIdMap.set(t.name, newTaskIdCounter++);
+        }
       }
 
       syncPayload.tasks = config.tasks.map((t) => {
