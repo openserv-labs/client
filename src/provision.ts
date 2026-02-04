@@ -283,19 +283,17 @@ function writeEnvVar(key: string, value: string): void {
 /**
  * Read wallet credentials from .env via process.env
  */
-function getWalletFromEnv(): { privateKey?: string; address?: string } {
+function getWalletFromEnv(): { privateKey?: string } {
   return {
     privateKey: process.env.WALLET_PRIVATE_KEY,
-    address: process.env.WALLET_ADDRESS,
   };
 }
 
 /**
  * Write wallet credentials to .env file
  */
-function writeWalletToEnv(privateKey: string, address: string): void {
+function writeWalletToEnv(privateKey: string): void {
   writeEnvVar("WALLET_PRIVATE_KEY", privateKey);
-  writeEnvVar("WALLET_ADDRESS", address);
 }
 
 // ============================================================================
@@ -309,10 +307,11 @@ async function getOrCreateWallet(): Promise<{
   privateKey: string;
   address: string;
 }> {
-  const { privateKey, address } = getWalletFromEnv();
+  const { privateKey } = getWalletFromEnv();
 
-  if (privateKey && address) {
-    return { privateKey, address };
+  if (privateKey) {
+    const wallet = new ethers.Wallet(privateKey);
+    return { privateKey, address: wallet.address };
   }
 
   // Create new wallet
@@ -321,7 +320,7 @@ async function getOrCreateWallet(): Promise<{
   const newAddress = wallet.address;
 
   // Persist to .env (secrets stay in .env)
-  writeWalletToEnv(newPrivateKey, newAddress);
+  writeWalletToEnv(newPrivateKey);
 
   logger.info("Created new wallet:", newAddress);
   return { privateKey: newPrivateKey, address: newAddress };
