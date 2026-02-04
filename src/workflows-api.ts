@@ -316,11 +316,19 @@ export class WorkflowsAPI {
     }
 
     // Build tasks array with IDs
+    // Create a consistent mapping for task IDs - use unique negative IDs for new tasks
+    const taskIdMap = new Map<string, number>();
+    let newTaskIdCounter = 0;
     if (config.tasks) {
-      syncPayload.tasks = config.tasks.map((t) => {
+      for (const t of config.tasks) {
         const existingId = t.id || taskNameToId.get(t.name);
+        // Use decrementing negative IDs for new tasks so each is unique
+        taskIdMap.set(t.name, existingId || --newTaskIdCounter);
+      }
+
+      syncPayload.tasks = config.tasks.map((t) => {
         return {
-          id: existingId || 0, // 0 means create new
+          id: taskIdMap.get(t.name)!,
           description: t.description,
           body: t.body || t.description,
           input: t.input || "",
@@ -361,10 +369,10 @@ export class WorkflowsAPI {
         }
       }
 
-      // Add task nodes
+      // Add task nodes - use the same IDs from taskIdMap
       if (config.tasks) {
         for (const t of config.tasks) {
-          const taskId = t.id || taskNameToId.get(t.name) || 0;
+          const taskId = taskIdMap.get(t.name) || t.id || taskNameToId.get(t.name) || 0;
           nodes.push({
             id: `task-${t.name}`,
             type: "task",
@@ -432,7 +440,7 @@ export class WorkflowsAPI {
   private getTriggerName(type?: string): string {
     if (!type) return "on_request";
     const mapping: Record<string, string> = {
-      x402: "on_payment",
+      x402: "on_request",
       webhook: "on_request",
       cron: "periodically",
       manual: "on_event",
