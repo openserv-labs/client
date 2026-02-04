@@ -82,6 +82,12 @@ export interface TriggerDefinition {
   props?: Record<string, unknown>;
 }
 
+export interface OutputOption {
+  name: string;
+  type: "text" | "file" | "json";
+  instructions: string;
+}
+
 export interface TaskDefinition {
   id?: number;
   name: string;
@@ -90,11 +96,27 @@ export interface TaskDefinition {
   body?: string;
   input?: string;
   dependencies?: string[];
+  /**
+   * Custom output options for branching workflows.
+   * Keys become the output port IDs used in edge sourcePort.
+   * @default { default: { name: "Task Output", type: "text", instructions: "Complete the task and provide output" } }
+   */
+  outputOptions?: Record<string, OutputOption>;
 }
 
 export interface EdgeDefinition {
   from: string;
   to: string;
+  /**
+   * Source port ID - must match a key in the source task's outputOptions.
+   * @default "default"
+   */
+  sourcePort?: string;
+  /**
+   * Target port ID.
+   * @default "input"
+   */
+  targetPort?: string;
 }
 
 export interface WorkflowConfig {

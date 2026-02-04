@@ -332,6 +332,15 @@ export class WorkflowsAPI {
       }
 
       syncPayload.tasks = config.tasks.map((t) => {
+        // Use custom outputOptions if provided, otherwise use default
+        const outputOptions = t.outputOptions || {
+          default: {
+            name: "Task Output",
+            type: "text",
+            instructions: "Complete the task and provide output",
+          },
+        };
+
         return {
           id: taskIdMap.get(t.name)!,
           description: t.description,
@@ -342,13 +351,7 @@ export class WorkflowsAPI {
           status: "to-do",
           metadata: null,
           attributes: { name: t.name },
-          outputOptions: {
-            default: {
-              name: "Task Output",
-              type: "text",
-              instructions: "Complete the task and provide output",
-            },
-          },
+          outputOptions,
         };
       });
     }
@@ -379,13 +382,25 @@ export class WorkflowsAPI {
         for (const t of config.tasks) {
           const taskId =
             taskIdMap.get(t.name) || t.id || taskNameToId.get(t.name) || 0;
+
+          // Create outputPorts from outputOptions keys
+          const outputOptions = t.outputOptions || {
+            default: { name: "Task Output", type: "text", instructions: "" },
+          };
+          const outputPorts = Object.entries(outputOptions).map(
+            ([key, opt]) => ({
+              id: key,
+              name: opt.name || key,
+            }),
+          );
+
           nodes.push({
             id: `task-${t.name}`,
             type: "task",
             taskId,
             position: { x: 200, y: 0 },
             inputPorts: [{ id: "input", name: "Input" }],
-            outputPorts: [{ id: "default", name: "Output" }],
+            outputPorts,
           });
         }
       }
@@ -399,8 +414,8 @@ export class WorkflowsAPI {
             id: `edge-${i}`,
             source: sourceNode,
             target: targetNode,
-            sourcePort: "default",
-            targetPort: "input",
+            sourcePort: e.sourcePort || "default",
+            targetPort: e.targetPort || "input",
           });
         });
       } else if (

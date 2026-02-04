@@ -11,6 +11,7 @@ export type {
   Category,
   MarketplaceAgent,
   MarketplaceAgentsResponse,
+  OutputOption,
   TriggerDefinition,
   TaskDefinition,
   EdgeDefinition,
