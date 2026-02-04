@@ -9,6 +9,18 @@ import { type TriggerConfig, triggerConfigToProps } from "./triggers-api";
 // ============================================================================
 
 /**
+ * Interface for an agent instance that can receive credentials.
+ * This matches the Agent class from @openserv-labs/sdk.
+ */
+export interface AgentInstance {
+  /**
+   * Set credentials for this agent instance.
+   * Called by provision() to bind the agent to its platform credentials.
+   */
+  setCredentials(credentials: { apiKey: string; authToken?: string }): void;
+}
+
+/**
  * Configuration for provisioning an agent and workflow.
  *
  * @example
@@ -27,11 +39,28 @@ import { type TriggerConfig, triggerConfigToProps } from "./triggers-api";
  *     }
  *   }
  * };
+ *
+ * // With agent instance binding:
+ * const agent = new Agent({ systemPrompt: '...' });
+ * const config: ProvisionConfig = {
+ *   agent: {
+ *     instance: agent,  // Bind credentials to this agent
+ *     name: 'my-agent',
+ *     description: 'Handles API requests'
+ *   },
+ *   // ...
+ * };
  * ```
  */
 export interface ProvisionConfig {
   /** Agent configuration */
   agent: {
+    /**
+     * Optional agent instance to bind credentials to.
+     * When provided, provision() will call instance.setCredentials() with the API key.
+     * This allows defining the agent before calling provision().
+     */
+    instance?: AgentInstance;
     /** Unique name for the agent */
     name: string;
     /** Description of the agent's capabilities */
@@ -739,10 +768,17 @@ export async function provision(
     config.agent,
   );
 
-  // Set credentials in process.env so Agent can read them
-  process.env.OPENSERV_API_KEY = apiKey;
-  if (authToken) {
-    process.env.OPENSERV_AUTH_TOKEN = authToken;
+  // Bind credentials to the agent
+  if (config.agent.instance) {
+    // Direct binding to agent instance (preferred)
+    config.agent.instance.setCredentials({ apiKey, authToken });
+    logger.info("Bound credentials to agent instance");
+  } else {
+    // Fallback: set credentials in process.env for agents without instance binding
+    process.env.OPENSERV_API_KEY = apiKey;
+    if (authToken) {
+      process.env.OPENSERV_AUTH_TOKEN = authToken;
+    }
   }
 
   // Provision workflow (pass agent name and wallet address for x402 triggers)

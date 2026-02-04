@@ -62,7 +62,12 @@ export { PaymentsAPI } from "./payments-api";
 export type { IntegrationConnection } from "./integrations-api";
 
 // Provision types
-export type { ProvisionConfig, ProvisionResult, Logger } from "./provision";
+export type {
+  AgentInstance,
+  ProvisionConfig,
+  ProvisionResult,
+  Logger,
+} from "./provision";
 
 // Provision functions
 export {
