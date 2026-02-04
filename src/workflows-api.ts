@@ -238,8 +238,7 @@ export class WorkflowsAPI {
    * Sync workflow with declarative configuration.
    *
    * This allows updating triggers, tasks, and edges in a single call.
-   * Note: For creating triggers, prefer using the triggers API directly
-   * as the sync endpoint has known limitations.
+   * This is the recommended approach for creating and updating workflows.
    *
    * @param params - Parameters object
    * @param params.id - The workflow ID
