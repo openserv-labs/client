@@ -13,10 +13,10 @@ import type { X402PaymentRequest, X402PaymentResult } from "./types";
  * ```typescript
  * const client = new PlatformClient();
  *
- * // Pay and execute an x402 workflow in one call - only wallet key needed!
+ * // Pay and execute an x402 workflow by ID - only wallet key needed!
  * const result = await client.payments.payWorkflow({
- *   triggerUrl: 'https://api.openserv.ai/webhooks/x402/trigger/...',
- *   input: { query: 'Hello world' }
+ *   workflowId: 123,
+ *   input: { prompt: 'Hello world' }
  * });
  *
  * console.log(result.response); // Workflow response
@@ -29,24 +29,28 @@ export class PaymentsAPI {
    * Pay for and execute an x402-protected workflow.
    *
    * This method handles the entire x402 payment flow automatically:
-   * 1. Creates a payment-enabled fetch wrapper using your wallet
-   * 2. Makes a request to the trigger URL
-   * 3. Automatically handles the 402 Payment Required response
-   * 4. Signs and submits the payment
-   * 5. Retries the request with payment proof
-   * 6. Returns the workflow response
+   * 1. Resolves the x402 trigger URL (from workflowId or provided triggerUrl)
+   * 2. Creates a payment-enabled fetch wrapper using your wallet
+   * 3. Makes a request to the trigger URL
+   * 4. Automatically handles the 402 Payment Required response
+   * 5. Signs and submits the payment
+   * 6. Retries the request with payment proof
+   * 7. Returns the workflow response
+   *
+   * Provide either `workflowId` (recommended) or `triggerUrl`.
    *
    * @param params - Payment parameters
-   * @param params.triggerUrl - The x402 trigger URL (webhookUrl from x402-services API or trigger.webhookUrl)
+   * @param params.workflowId - The workflow ID (recommended - resolves x402 trigger URL automatically)
+   * @param params.triggerUrl - The x402 trigger URL (alternative to workflowId)
    * @param params.privateKey - Wallet private key for payment (or uses WALLET_PRIVATE_KEY env var)
    * @param params.input - Input data to pass to the workflow
    * @returns Payment result with workflow response
    *
    * @example
    * ```typescript
-   * // Using environment variable for private key
+   * // By workflow ID (recommended)
    * const result = await client.payments.payWorkflow({
-   *   triggerUrl: 'https://api.openserv.ai/webhooks/x402/trigger/abc123',
+   *   workflowId: 123,
    *   input: { prompt: 'Generate a summary' }
    * });
    *
@@ -55,15 +59,25 @@ export class PaymentsAPI {
    *
    * @example
    * ```typescript
+   * // By direct URL
+   * const result = await client.payments.payWorkflow({
+   *   triggerUrl: 'https://api.openserv.ai/webhooks/x402/trigger/abc123',
+   *   input: { prompt: 'Generate a summary' }
+   * });
+   * ```
+   *
+   * @example
+   * ```typescript
    * // Explicitly providing private key
    * const result = await client.payments.payWorkflow({
-   *   triggerUrl: workflow.triggers[0].webhookUrl,
+   *   workflowId: 123,
    *   privateKey: '0x...',
    *   input: { query: 'What is the weather?' }
    * });
    * ```
    */
   async payWorkflow(params: X402PaymentRequest): Promise<X402PaymentResult> {
+    const triggerUrl = await this.resolveX402TriggerUrl(params);
     const privateKey = params.privateKey || process.env.WALLET_PRIVATE_KEY;
 
     if (!privateKey) {
@@ -82,7 +96,7 @@ export class PaymentsAPI {
     const x402Fetch = wrapFetchWithPayment(fetch, signer);
 
     // Make the request - x402Fetch automatically handles 402 responses
-    const response = await x402Fetch(params.triggerUrl, {
+    const response = await x402Fetch(triggerUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -108,6 +122,44 @@ export class PaymentsAPI {
       network: "base",
       chainId: 8453,
     };
+  }
+
+  /**
+   * Resolve the x402 trigger URL from workflowId or return the provided triggerUrl.
+   */
+  private async resolveX402TriggerUrl(params: {
+    workflowId?: number;
+    triggerUrl?: string;
+    triggerName?: string;
+  }): Promise<string> {
+    if (params.triggerUrl) return params.triggerUrl;
+
+    if (!params.workflowId) {
+      throw new Error("Either workflowId or triggerUrl is required.");
+    }
+
+    const triggers = await this.client.triggers.list({
+      workflowId: params.workflowId,
+    });
+
+    // Find matching x402 trigger: by name if specified, otherwise first x402 trigger with a token
+    const trigger = params.triggerName
+      ? triggers.find(
+          (t) =>
+            t.name === params.triggerName && t.token && t.props?.x402Pricing,
+        )
+      : triggers.find((t) => t.token && t.props?.x402Pricing);
+
+    if (!trigger?.token) {
+      const hint = params.triggerName
+        ? `x402 trigger "${params.triggerName}"`
+        : "No x402 trigger";
+      throw new Error(`${hint} not found in workflow ${params.workflowId}.`);
+    }
+
+    const baseUrl =
+      this.client.rawClient.defaults.baseURL || "https://api.openserv.ai";
+    return `${baseUrl}/webhooks/x402/trigger/${trigger.token}`;
   }
 
   /**

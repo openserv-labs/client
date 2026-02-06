@@ -522,6 +522,97 @@ export class TriggersAPI {
   }
 
   /**
+   * Fire a webhook trigger by workflow ID or direct URL.
+   *
+   * When `workflowId` is provided, the method automatically resolves the
+   * webhook trigger token by listing the workflow's triggers and finding
+   * the first non-x402 trigger with a token. You can narrow which trigger
+   * to use by also passing `triggerId` or `triggerName`.
+   *
+   * @param params - Parameters
+   * @param params.workflowId - The workflow ID (recommended - resolves webhook URL automatically)
+   * @param params.triggerUrl - Direct webhook URL (alternative to workflowId)
+   * @param params.triggerId - Specific trigger ID within the workflow (optional, used with workflowId)
+   * @param params.triggerName - Specific trigger name within the workflow (optional, used with workflowId)
+   * @param params.input - Input data to pass to the workflow
+   * @returns The webhook response data
+   *
+   * @example
+   * ```typescript
+   * // By workflow ID (recommended)
+   * const result = await client.triggers.fireWebhook({
+   *   workflowId: 123,
+   *   input: { query: 'hello world' }
+   * });
+   *
+   * // By workflow ID + trigger name
+   * const result = await client.triggers.fireWebhook({
+   *   workflowId: 123,
+   *   triggerName: 'My Webhook',
+   *   input: { query: 'hello world' }
+   * });
+   *
+   * // By direct URL
+   * const result = await client.triggers.fireWebhook({
+   *   triggerUrl: 'https://api.openserv.ai/webhooks/trigger/TOKEN',
+   *   input: { query: 'hello world' }
+   * });
+   * ```
+   */
+  async fireWebhook(params: {
+    workflowId?: number;
+    triggerUrl?: string;
+    triggerId?: string;
+    triggerName?: string;
+    input?: Record<string, unknown>;
+  }): Promise<unknown> {
+    if (params.triggerUrl) {
+      // Direct URL provided -- use raw POST (the URL may point to an external host)
+      return this.client.post(params.triggerUrl, params.input || {});
+    }
+
+    const token = await this.resolveWebhookToken(params);
+    return this.client.post(`/webhooks/trigger/${token}`, params.input || {});
+  }
+
+  /**
+   * Resolve a webhook trigger token from workflowId.
+   */
+  private async resolveWebhookToken(params: {
+    workflowId?: number;
+    triggerId?: string;
+    triggerName?: string;
+  }): Promise<string> {
+    if (!params.workflowId) {
+      throw new Error("Either workflowId or triggerUrl is required.");
+    }
+
+    const triggers = await this.list({ workflowId: params.workflowId });
+
+    let trigger: Trigger | undefined;
+    if (params.triggerId) {
+      trigger = triggers.find((t) => t.id === params.triggerId && t.token);
+    } else if (params.triggerName) {
+      trigger = triggers.find((t) => t.name === params.triggerName && t.token);
+    } else {
+      trigger = triggers.find((t) => t.token && !t.props?.x402Pricing);
+    }
+
+    if (!trigger?.token) {
+      const hint = params.triggerId
+        ? `Trigger ${params.triggerId}`
+        : params.triggerName
+          ? `Trigger "${params.triggerName}"`
+          : "No webhook trigger";
+      throw new Error(
+        `${hint} not found or has no token in workflow ${params.workflowId}.`,
+      );
+    }
+
+    return trigger.token;
+  }
+
+  /**
    * Get callable triggers for a workspace.
    *
    * Returns the list of triggers that can be called externally, along with

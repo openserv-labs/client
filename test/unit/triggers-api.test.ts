@@ -270,6 +270,239 @@ describe("TriggersAPI", () => {
     });
   });
 
+  describe("fireWebhook", () => {
+    it("should fire webhook by workflowId (resolves first non-x402 trigger)", async () => {
+      const triggers = [
+        {
+          id: "trigger-1",
+          name: "My Webhook",
+          integrationConnection: { id: "conn-1" },
+          props: { waitForCompletion: true },
+          attributes: { uiState: { token: "webhook-token-abc" } },
+          is_active: true,
+          state: "active",
+        },
+      ];
+
+      // list() calls client.get to fetch workspace
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers }),
+      );
+      // fireWebhook calls client.post to fire the trigger
+      mockClient.post.mock.mockImplementation(() =>
+        Promise.resolve({ status: "success" }),
+      );
+
+      const result = await triggersApi.fireWebhook({
+        workflowId: 123,
+        input: { query: "hello world" },
+      });
+
+      assert.deepStrictEqual(result, { status: "success" });
+
+      // Verify POST was called with the correct webhook path
+      const postCall = mockClient.post.mock.calls[0].arguments;
+      assert.strictEqual(postCall[0], "/webhooks/trigger/webhook-token-abc");
+      assert.deepStrictEqual(postCall[1], { query: "hello world" });
+    });
+
+    it("should fire webhook by direct triggerUrl", async () => {
+      mockClient.post.mock.mockImplementation(() =>
+        Promise.resolve({ status: "ok" }),
+      );
+
+      const result = await triggersApi.fireWebhook({
+        triggerUrl: "https://api.openserv.ai/webhooks/trigger/custom-token",
+        input: { msg: "test" },
+      });
+
+      assert.deepStrictEqual(result, { status: "ok" });
+
+      const postCall = mockClient.post.mock.calls[0].arguments;
+      assert.strictEqual(
+        postCall[0],
+        "https://api.openserv.ai/webhooks/trigger/custom-token",
+      );
+      assert.deepStrictEqual(postCall[1], { msg: "test" });
+    });
+
+    it("should resolve webhook by triggerName", async () => {
+      const triggers = [
+        {
+          id: "trigger-x402",
+          name: "Paid Service",
+          integrationConnection: { id: "conn-1" },
+          props: { x402Pricing: "0.01" },
+          attributes: { uiState: { token: "x402-token" } },
+          is_active: true,
+          state: "active",
+        },
+        {
+          id: "trigger-webhook",
+          name: "Free Webhook",
+          integrationConnection: { id: "conn-2" },
+          props: { waitForCompletion: true },
+          attributes: { uiState: { token: "webhook-token-xyz" } },
+          is_active: true,
+          state: "active",
+        },
+      ];
+
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers }),
+      );
+      mockClient.post.mock.mockImplementation(() =>
+        Promise.resolve({ fired: true }),
+      );
+
+      await triggersApi.fireWebhook({
+        workflowId: 123,
+        triggerName: "Free Webhook",
+        input: { data: "test" },
+      });
+
+      const postCall = mockClient.post.mock.calls[0].arguments;
+      assert.strictEqual(postCall[0], "/webhooks/trigger/webhook-token-xyz");
+    });
+
+    it("should resolve webhook by triggerId", async () => {
+      const triggers = [
+        {
+          id: "trigger-a",
+          name: "Webhook A",
+          integrationConnection: { id: "conn-1" },
+          props: {},
+          attributes: { uiState: { token: "token-a" } },
+          is_active: true,
+          state: "active",
+        },
+        {
+          id: "trigger-b",
+          name: "Webhook B",
+          integrationConnection: { id: "conn-2" },
+          props: {},
+          attributes: { uiState: { token: "token-b" } },
+          is_active: true,
+          state: "active",
+        },
+      ];
+
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers }),
+      );
+      mockClient.post.mock.mockImplementation(() => Promise.resolve({}));
+
+      await triggersApi.fireWebhook({
+        workflowId: 123,
+        triggerId: "trigger-b",
+      });
+
+      const postCall = mockClient.post.mock.calls[0].arguments;
+      assert.strictEqual(postCall[0], "/webhooks/trigger/token-b");
+    });
+
+    it("should skip x402 triggers when resolving by workflowId", async () => {
+      const triggers = [
+        {
+          id: "trigger-x402",
+          name: "Paid",
+          integrationConnection: { id: "conn-1" },
+          props: { x402Pricing: "0.01" },
+          attributes: { uiState: { token: "x402-token" } },
+          is_active: true,
+          state: "active",
+        },
+        {
+          id: "trigger-webhook",
+          name: "Free",
+          integrationConnection: { id: "conn-2" },
+          props: {},
+          attributes: { uiState: { token: "free-token" } },
+          is_active: true,
+          state: "active",
+        },
+      ];
+
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers }),
+      );
+      mockClient.post.mock.mockImplementation(() => Promise.resolve({}));
+
+      await triggersApi.fireWebhook({ workflowId: 123 });
+
+      const postCall = mockClient.post.mock.calls[0].arguments;
+      assert.strictEqual(postCall[0], "/webhooks/trigger/free-token");
+    });
+
+    it("should throw when no workflowId or triggerUrl provided", async () => {
+      await assert.rejects(
+        () => triggersApi.fireWebhook({ input: { q: "test" } }),
+        { message: /Either workflowId or triggerUrl is required/ },
+      );
+    });
+
+    it("should throw when no webhook trigger found for workflow", async () => {
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers: [] }),
+      );
+
+      await assert.rejects(() => triggersApi.fireWebhook({ workflowId: 999 }), {
+        message: /No webhook trigger.*not found.*workflow 999/,
+      });
+    });
+
+    it("should throw when triggerName not found", async () => {
+      const triggers = [
+        {
+          id: "trigger-1",
+          name: "Other Webhook",
+          integrationConnection: { id: "conn-1" },
+          props: {},
+          attributes: { uiState: { token: "token-1" } },
+          is_active: true,
+          state: "active",
+        },
+      ];
+
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers }),
+      );
+
+      await assert.rejects(
+        () =>
+          triggersApi.fireWebhook({
+            workflowId: 123,
+            triggerName: "Nonexistent",
+          }),
+        { message: /Trigger "Nonexistent" not found/ },
+      );
+    });
+
+    it("should use empty object for input when not provided", async () => {
+      const triggers = [
+        {
+          id: "trigger-1",
+          name: "Webhook",
+          integrationConnection: { id: "conn-1" },
+          props: {},
+          attributes: { uiState: { token: "token-1" } },
+          is_active: true,
+          state: "active",
+        },
+      ];
+
+      mockClient.get.mock.mockImplementation(() =>
+        Promise.resolve({ triggers }),
+      );
+      mockClient.post.mock.mockImplementation(() => Promise.resolve({}));
+
+      await triggersApi.fireWebhook({ workflowId: 123 });
+
+      const postCall = mockClient.post.mock.calls[0].arguments;
+      assert.deepStrictEqual(postCall[1], {});
+    });
+  });
+
   describe("getCallableTriggers", () => {
     it("should return callable triggers for a workspace", async () => {
       const triggers = [

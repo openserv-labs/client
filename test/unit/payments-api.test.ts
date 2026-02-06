@@ -2,15 +2,23 @@ import { describe, it, beforeEach, mock, afterEach } from "node:test";
 import assert from "node:assert";
 import { PaymentsAPI } from "../../src/payments-api";
 
-// Mock PlatformClient
+// Mock PlatformClient (with triggers sub-API for workflowId resolution)
 function createMockClient() {
   return {
     get: mock.fn(),
     post: mock.fn(),
     put: mock.fn(),
     delete: mock.fn(),
-    rawClient: { defaults: { headers: { common: {} } } },
+    rawClient: {
+      defaults: {
+        baseURL: "https://api.openserv.ai",
+        headers: { common: {} },
+      },
+    },
     authenticate: mock.fn(),
+    triggers: {
+      list: mock.fn(),
+    },
   };
 }
 
@@ -208,6 +216,184 @@ describe("PaymentsAPI", () => {
 
       const parsed = JSON.parse(requestBody);
       assert.deepStrictEqual(parsed.payload, {});
+    });
+  });
+
+  describe("payWorkflow with workflowId", () => {
+    it("should resolve x402 trigger URL from workflowId", async () => {
+      process.env.WALLET_PRIVATE_KEY =
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      // Mock triggers.list to return an x402 trigger
+      mockClient.triggers.list.mock.mockImplementation(() =>
+        Promise.resolve([
+          {
+            id: "trigger-x402",
+            name: "Premium Service",
+            token: "x402-token-abc",
+            props: { x402Pricing: "0.01" },
+            isActive: true,
+          },
+        ]),
+      );
+
+      // Mock fetch for x402 payment
+      globalThis.fetch = mock.fn(async () => {
+        return new Response(JSON.stringify({ result: "paid" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch;
+
+      const result = await paymentsApi.payWorkflow({
+        workflowId: 42,
+        input: { prompt: "test" },
+      });
+
+      assert.strictEqual(result.success, true);
+
+      // Verify triggers.list was called with correct workflowId
+      const listCall = mockClient.triggers.list.mock.calls[0].arguments;
+      assert.deepStrictEqual(listCall[0], { workflowId: 42 });
+
+      // Verify fetch was called with the resolved x402 URL
+      const fetchCall = (globalThis.fetch as ReturnType<typeof mock.fn>).mock
+        .calls[0].arguments;
+      assert.strictEqual(
+        fetchCall[0],
+        "https://api.openserv.ai/webhooks/x402/trigger/x402-token-abc",
+      );
+    });
+
+    it("should resolve x402 trigger by triggerName", async () => {
+      process.env.WALLET_PRIVATE_KEY =
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      mockClient.triggers.list.mock.mockImplementation(() =>
+        Promise.resolve([
+          {
+            id: "trigger-1",
+            name: "Cheap Service",
+            token: "token-cheap",
+            props: { x402Pricing: "0.001" },
+            isActive: true,
+          },
+          {
+            id: "trigger-2",
+            name: "Premium Service",
+            token: "token-premium",
+            props: { x402Pricing: "0.05" },
+            isActive: true,
+          },
+        ]),
+      );
+
+      globalThis.fetch = mock.fn(async () => {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch;
+
+      await paymentsApi.payWorkflow({
+        workflowId: 42,
+        triggerName: "Premium Service",
+        input: { prompt: "premium request" },
+      });
+
+      const fetchCall = (globalThis.fetch as ReturnType<typeof mock.fn>).mock
+        .calls[0].arguments;
+      assert.strictEqual(
+        fetchCall[0],
+        "https://api.openserv.ai/webhooks/x402/trigger/token-premium",
+      );
+    });
+
+    it("should throw when no workflowId or triggerUrl provided", async () => {
+      process.env.WALLET_PRIVATE_KEY =
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      await assert.rejects(
+        () => paymentsApi.payWorkflow({ input: { prompt: "test" } }),
+        { message: /Either workflowId or triggerUrl is required/ },
+      );
+    });
+
+    it("should throw when no x402 trigger found for workflow", async () => {
+      process.env.WALLET_PRIVATE_KEY =
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      mockClient.triggers.list.mock.mockImplementation(() =>
+        Promise.resolve([
+          {
+            id: "trigger-webhook",
+            name: "Webhook",
+            token: "webhook-token",
+            props: { waitForCompletion: true },
+            isActive: true,
+          },
+        ]),
+      );
+
+      await assert.rejects(() => paymentsApi.payWorkflow({ workflowId: 99 }), {
+        message: /No x402 trigger.*not found.*workflow 99/,
+      });
+    });
+
+    it("should throw when triggerName x402 not found", async () => {
+      process.env.WALLET_PRIVATE_KEY =
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      mockClient.triggers.list.mock.mockImplementation(() =>
+        Promise.resolve([
+          {
+            id: "trigger-1",
+            name: "Other Service",
+            token: "token-1",
+            props: { x402Pricing: "0.01" },
+            isActive: true,
+          },
+        ]),
+      );
+
+      await assert.rejects(
+        () =>
+          paymentsApi.payWorkflow({
+            workflowId: 42,
+            triggerName: "Nonexistent",
+          }),
+        { message: /x402 trigger "Nonexistent" not found/ },
+      );
+    });
+
+    it("should prefer triggerUrl over workflowId when both provided", async () => {
+      process.env.WALLET_PRIVATE_KEY =
+        "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+      globalThis.fetch = mock.fn(async () => {
+        return new Response(JSON.stringify({ result: "ok" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch;
+
+      await paymentsApi.payWorkflow({
+        workflowId: 42,
+        triggerUrl:
+          "https://api.openserv.ai/webhooks/x402/trigger/explicit-token",
+        input: { prompt: "test" },
+      });
+
+      // Should NOT have called triggers.list (triggerUrl takes precedence)
+      assert.strictEqual(mockClient.triggers.list.mock.calls.length, 0);
+
+      // Verify fetch was called with the explicit URL
+      const fetchCall = (globalThis.fetch as ReturnType<typeof mock.fn>).mock
+        .calls[0].arguments;
+      assert.strictEqual(
+        fetchCall[0],
+        "https://api.openserv.ai/webhooks/x402/trigger/explicit-token",
+      );
     });
   });
 

@@ -350,10 +350,18 @@ export interface SignFeedbackAuthResponse {
 
 /**
  * Request parameters for paying and executing an x402 workflow.
+ *
+ * Provide either `workflowId` (recommended) or `triggerUrl`. When `workflowId`
+ * is given, the x402 trigger URL is resolved automatically by looking up the
+ * workflow's triggers.
  */
 export interface X402PaymentRequest {
-  /** The x402 trigger URL to pay for (webhookUrl from discoverServices or trigger.webhookUrl) */
-  triggerUrl: string;
+  /** The workflow ID to pay for. The x402 trigger URL is resolved automatically. */
+  workflowId?: number;
+  /** The x402 trigger URL (alternative to workflowId - use when you already have the URL) */
+  triggerUrl?: string;
+  /** Specific trigger name within the workflow (optional, used with workflowId) */
+  triggerName?: string;
   /** Wallet private key for payment (or uses WALLET_PRIVATE_KEY env var) */
   privateKey?: string;
   /** Input data to pass to the workflow */
