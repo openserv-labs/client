@@ -41,7 +41,7 @@ export class WorkflowsAPI {
    * Can create an empty workflow or a fully configured one with triggers, tasks, and edges.
    *
    * @param config - Workflow configuration
-   * @param config.name - Name of the workflow
+   * @param config.name - Name of the workflow (also used as the agent name in ERC-8004)
    * @param config.goal - Goal/description of what the workflow does
    * @param config.agentIds - Array of agent IDs to include in the workflow
    * @param config.triggers - Optional array of trigger definitions
@@ -171,7 +171,7 @@ export class WorkflowsAPI {
    * Update workflow metadata.
    * @param params - Parameters object
    * @param params.id - The workflow ID to update
-   * @param params.name - New name (optional)
+   * @param params.name - New name (optional, also used as the agent name in ERC-8004)
    * @param params.goal - New goal (optional)
    * @returns The updated Workflow object
    */

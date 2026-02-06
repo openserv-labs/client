@@ -114,6 +114,7 @@ export interface EdgeDefinition {
 }
 
 export interface WorkflowConfig {
+  /** Workflow name. Also used as the agent name in ERC-8004. */
   name: string;
   goal?: string;
   /** Agent IDs to include in the workspace. Optional -- if omitted, derived from tasks[].agentId. If provided, merged with task-derived IDs. */
@@ -153,6 +154,7 @@ export interface Edge {
 
 export interface WorkflowData {
   id: number;
+  /** Workflow name. Also used as the agent name in ERC-8004. */
   name: string;
   goal: string;
   status: string;

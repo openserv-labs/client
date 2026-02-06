@@ -32,7 +32,8 @@ export interface AgentInstance {
  *     description: 'Handles API requests'
  *   },
  *   workflow: {
- *     name: 'api-workflow',
+ *     name: 'API Agent Pro',
+ *     goal: 'Process API requests and return responses',
  *     trigger: triggers.webhook({ waitForCompletion: true }),
  *     task: {
  *       description: 'Process incoming requests',
@@ -76,8 +77,10 @@ export interface ProvisionConfig {
   };
   /** Workflow configuration */
   workflow: {
-    /** Name for the workflow */
+    /** Name for the workflow. Also used as the agent name in ERC-8004. */
     name: string;
+    /** Goal/description of what the workflow should accomplish */
+    goal: string;
     /** Trigger configuration (use triggers factory) */
     trigger: TriggerConfig;
     /** Single task shorthand (backward compat). Omit agentId to assign to the provisioned agent. */
@@ -568,8 +571,7 @@ async function provisionWorkflow(
     // and auto-generates sequential edges when none are provided
     const workflow = await client.workflows.create({
       name: `${workflowName} Workflow`,
-      goal:
-        config.task?.description || tasks[0]?.description || "Process requests",
+      goal: config.goal,
       agentIds: config.agentIds,
       triggers: [config.trigger],
       tasks: tasksWithAgents,

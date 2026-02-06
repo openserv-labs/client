@@ -12,6 +12,7 @@ import type {
 
 export class Workflow {
   readonly id: number;
+  /** Workflow name. Also used as the agent name in ERC-8004. */
   readonly name: string;
   readonly goal: string;
   status: string;
