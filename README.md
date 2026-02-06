@@ -325,8 +325,9 @@ const result = await client.erc8004.registerOnChain({
 console.log(result.agentId)         // "8453:42"
 console.log(result.txHash)          // "0xabc..."
 console.log(result.ipfsCid)         // "bafkrei..."
-console.log(result.agentCardUrl)    // "https://gateway.pinata.cloud/ipfs/bafkrei..."
+console.log(result.agentCardUrl)     // "https://gateway.pinata.cloud/ipfs/bafkrei..."
 console.log(result.blockExplorerUrl) // "https://basescan.org/tx/0xabc..."
+console.log(result.scanUrl)          // "https://www.8004scan.io/agents/base/42"
 ```
 
 Under the hood, `registerOnChain` does the following:
@@ -686,9 +687,9 @@ triggers.webhook({
   description: 'Receives data from external systems for processing',
   input: { message: { type: 'string' } },
   waitForCompletion: true,
-  timeout: 180
+  timeout: 600
 })
-// { type: 'webhook', name: '...', waitForCompletion: true, timeout: 180, inputSchema: {...} }
+// { type: 'webhook', name: '...', waitForCompletion: true, timeout: 600, inputSchema: {...} }
 
 // Cron trigger
 triggers.cron({

@@ -8,7 +8,7 @@ describe("Triggers Helpers", () => {
       const config = triggers.webhook();
       assert.strictEqual(config.type, "webhook");
       assert.strictEqual(config.waitForCompletion, false);
-      assert.strictEqual(config.timeout, 180);
+      assert.strictEqual(config.timeout, 600);
     });
 
     it("should create a webhook trigger config with options", () => {
@@ -33,7 +33,7 @@ describe("Triggers Helpers", () => {
       const config = triggers.x402({ price: "0.01" });
       assert.strictEqual(config.type, "x402");
       assert.strictEqual(config.x402Pricing, "0.01");
-      assert.strictEqual(config.timeout, 180);
+      assert.strictEqual(config.timeout, 600);
       assert.strictEqual(config.x402WalletAddress, undefined);
     });
 

@@ -37,7 +37,7 @@ export interface WebhookTriggerConfig {
   description?: string;
   /** Whether to wait for workflow completion before responding */
   waitForCompletion?: boolean;
-  /** Timeout in seconds (default: 180) */
+  /** Timeout in seconds (default: 600) */
   timeout?: number;
   /** JSON Schema for webhook payload validation */
   inputSchema?: Record<string, unknown>;
@@ -59,7 +59,7 @@ export interface X402TriggerConfig {
   x402Pricing: string;
   /** Wallet address to receive payments */
   x402WalletAddress?: string;
-  /** Timeout in seconds (default: 180) */
+  /** Timeout in seconds (default: 600) */
   timeout?: number;
   /** JSON Schema for request validation */
   inputSchema?: Record<string, unknown>;
@@ -123,10 +123,10 @@ export type TriggerConfig =
  * import { triggers } from '@openserv-labs/client';
  *
  * const webhook = triggers.webhook({ waitForCompletion: true });
- * // { type: 'webhook', waitForCompletion: true, timeout: 180 }
+ * // { type: 'webhook', waitForCompletion: true, timeout: 600 }
  *
  * const x402 = triggers.x402({ price: '0.01' });
- * // { type: 'x402', x402Pricing: '0.01', timeout: 180 }
+ * // { type: 'x402', x402Pricing: '0.01', timeout: 600 }
  * ```
  */
 export const triggers = {
@@ -146,7 +146,7 @@ export const triggers = {
     ...(opts?.name && { name: opts.name }),
     ...(opts?.description && { description: opts.description }),
     waitForCompletion: opts?.waitForCompletion ?? false,
-    timeout: opts?.timeout ?? 180,
+    timeout: opts?.timeout ?? 600,
     ...(opts?.input && {
       inputSchema: inputSchemaToJsonSchema(opts.input),
     }),
@@ -173,7 +173,7 @@ export const triggers = {
     ...(opts.description && { description: opts.description }),
     x402Pricing: opts.price,
     waitForCompletion: true,
-    timeout: opts.timeout ?? 180,
+    timeout: opts.timeout ?? 600,
     ...(opts.walletAddress && {
       x402WalletAddress: opts.walletAddress,
     }),

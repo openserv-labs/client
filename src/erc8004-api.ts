@@ -202,10 +202,11 @@ export class Erc8004API {
    *   name: 'My AI Agent',
    *   description: 'An agent that does amazing things',
    * });
-   * console.log(result.agentId);        // "8453:42"
-   * console.log(result.txHash);          // "0xabc..."
-   * console.log(result.ipfsCid);         // "bafkrei..."
+   * console.log(result.agentId);         // "8453:42"
+   * console.log(result.txHash);           // "0xabc..."
+   * console.log(result.ipfsCid);          // "bafkrei..."
    * console.log(result.blockExplorerUrl); // "https://basescan.org/tx/0xabc..."
+   * console.log(result.scanUrl);          // "https://www.8004scan.io/agents/base/42"
    * ```
    */
   async registerOnChain(params: {
@@ -392,12 +393,17 @@ export class Erc8004API {
       ? `${chainConfig.blockExplorerUrl}/tx/${txHash}`
       : `https://basescan.org/tx/${txHash}`;
 
+    const network = chainConfig?.network ?? "base";
+    const tokenId = agentId.split(":")[1];
+    const scanUrl = `https://www.8004scan.io/agents/${network}/${tokenId}`;
+
     return {
       agentId,
       ipfsCid,
       txHash,
       agentCardUrl: `https://gateway.pinata.cloud/ipfs/${ipfsCid}`,
       blockExplorerUrl,
+      scanUrl,
     };
   }
 
@@ -681,4 +687,6 @@ export interface RegisterOnChainResult {
   agentCardUrl: string;
   /** URL to view the transaction on the block explorer */
   blockExplorerUrl: string;
+  /** URL to view the agent on 8004scan.io (e.g., "https://www.8004scan.io/agents/base/42") */
+  scanUrl: string;
 }
