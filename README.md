@@ -307,6 +307,136 @@ console.log(`Pay to: ${preflight.x402WalletAddress}`)
 console.log(`Input schema: ${JSON.stringify(preflight.jsonSchema)}`)
 ```
 
+### ERC-8004 (Agent Identity)
+
+ERC-8004 is an on-chain agent identity standard. The `registerOnChain` method handles the entire flow in a single call -- building the agent card, uploading to IPFS, and registering on-chain.
+
+> **Note**: The wallet used for `registerOnChain` must have ETH for gas on the target chain (Base mainnet by default).
+
+```typescript
+// Register an agent on-chain in one call
+const result = await client.erc8004.registerOnChain({
+  workflowId: 123,
+  privateKey: process.env.WALLET_PRIVATE_KEY!,
+  name: 'My AI Agent',
+  description: 'An agent that does amazing things',
+})
+
+console.log(result.agentId)         // "8453:42"
+console.log(result.txHash)          // "0xabc..."
+console.log(result.ipfsCid)         // "bafkrei..."
+console.log(result.agentCardUrl)    // "https://gateway.pinata.cloud/ipfs/bafkrei..."
+console.log(result.blockExplorerUrl) // "https://basescan.org/tx/0xabc..."
+```
+
+Under the hood, `registerOnChain` does the following:
+
+1. Reads the workspace wallet and callable triggers
+2. Builds the ERC-8004 agent card JSON (with services and wallet info)
+3. Uploads the agent card to IPFS via a presigned Pinata URL
+4. Registers on-chain (first deploy) or updates the URI (re-deploy)
+5. Saves the deployment state back to the platform
+
+Re-deploying (updating an existing registration) uses the same call -- it automatically detects whether the workspace already has an `erc8004AgentId` and uploads a fresh agent card with the latest name, description, services, and wallet info, then updates the on-chain URI to point to it. No new token is minted; only the metadata changes.
+
+#### Supported Chains
+
+`registerOnChain` defaults to Base mainnet (`chainId: 8453`). You can target any supported chain:
+
+```typescript
+// Deploy on a different chain
+const result = await client.erc8004.registerOnChain({
+  workflowId: 123,
+  privateKey: process.env.WALLET_PRIVATE_KEY!,
+  chainId: 42161,                              // Arbitrum One
+  rpcUrl: 'https://arb1.arbitrum.io/rpc',
+  name: 'My Agent',
+})
+```
+
+**Mainnets:** Ethereum (1), Base (8453), Polygon (137), Arbitrum One (42161), Celo (42220), Gnosis (100), Scroll (534352), Taiko (167000), BNB Smart Chain (56)
+
+**Testnets:** Ethereum Sepolia (11155111), Base Sepolia (84532), Polygon Amoy (80002), Arbitrum Sepolia (421614), Celo Alfajores (44787), Scroll Sepolia (534351), BNB Testnet (97)
+
+You can also query supported chains programmatically:
+
+```typescript
+import { listErc8004ChainIds, getErc8004Chain } from '@openserv-labs/client'
+
+const mainnets = listErc8004ChainIds('mainnet')  // [1, 8453, 137, ...]
+const testnets = listErc8004ChainIds('testnet')  // [11155111, 84532, ...]
+
+const baseConfig = getErc8004Chain(8453)
+console.log(baseConfig?.contracts.IDENTITY_REGISTRY)
+// "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+```
+
+#### Low-level ERC-8004 Operations
+
+For more control over individual steps, use the lower-level methods directly:
+
+```typescript
+// Generate a web3 wallet for the workspace
+const wallet = await client.erc8004.generateWallet({ workflowId: 123 })
+console.log('Wallet address:', wallet.address)
+
+// Import an existing wallet
+const imported = await client.erc8004.importWallet({
+  workflowId: 123,
+  address: '0x...',
+  network: 'base',
+  chainId: 8453,
+  privateKey: '0x...'
+})
+
+// Get the workspace wallet
+const existing = await client.erc8004.getWallet({ workflowId: 123 })
+console.log(existing.deployed, existing.erc8004AgentId)
+
+// Delete the workspace wallet
+await client.erc8004.deleteWallet({ workflowId: 123 })
+
+// Get a presigned IPFS URL for uploading the agent card
+const { url } = await client.erc8004.presignIpfsUrl({ workflowId: 123 })
+// Upload agent card to IPFS within 60 seconds using the signed URL
+
+// Deploy to ERC-8004 (before on-chain registration)
+await client.erc8004.deploy({
+  workflowId: 123,
+  erc8004AgentId: '',
+  stringifiedAgentCard: JSON.stringify(registrationFile),
+  walletAddress: '0x...',
+  network: 'base',
+  chainId: 8453,
+  rpcUrl: 'https://mainnet.base.org'
+})
+
+// Deploy to ERC-8004 (after on-chain registration, with tx hash)
+await client.erc8004.deploy({
+  workflowId: 123,
+  erc8004AgentId: '8453:42',
+  stringifiedAgentCard: JSON.stringify(updatedRegistrationFile),
+  latestDeploymentTransactionHash: '0xabc...',
+  latestDeploymentTimestamp: new Date(),
+  walletAddress: '0x...',
+  network: 'base',
+  chainId: 8453,
+  rpcUrl: 'https://mainnet.base.org'
+})
+
+// Get callable triggers for on-chain service registration
+const callableTriggers = await client.erc8004.getCallableTriggers({ workflowId: 123 })
+for (const trigger of callableTriggers) {
+  console.log(trigger.name, trigger.webEndpoint)
+}
+
+// Sign feedback auth for the reputation system
+const { signature } = await client.erc8004.signFeedbackAuth({
+  workflowId: 123,
+  buyerAddress: '0xBuyer...'
+})
+```
+
 ### Integrations
 
 Manage integration connections for triggers and external services.
@@ -647,6 +777,15 @@ import type {
   // x402 Payment types
   X402PaymentRequest,
   X402PaymentResult,
+  // ERC-8004 types
+  Erc8004DeployRequest,
+  RegisterOnChainResult,
+  Erc8004ChainConfig,
+  Web3Wallet,
+  ImportWeb3WalletRequest,
+  CallableTrigger,
+  PresignIpfsUrlResponse,
+  SignFeedbackAuthResponse,
   // Provision types
   ProvisionConfig,
   ProvisionResult,

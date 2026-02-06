@@ -7,6 +7,7 @@ import { TasksAPI } from "./tasks-api";
 import { WorkflowsAPI } from "./workflows-api";
 import { Web3API } from "./web3-api";
 import { PaymentsAPI } from "./payments-api";
+import { Erc8004API } from "./erc8004-api";
 import type { NonceResponse, VerifyResponse } from "./types";
 
 const PLATFORM_URL = process.env.OPENSERV_API_URL || "https://api.openserv.ai";
@@ -47,6 +48,8 @@ export class PlatformClient {
   readonly web3: Web3API;
   /** API for x402 payments to access paid workflows */
   readonly payments: PaymentsAPI;
+  /** API for ERC-8004 agent identity (deployment, wallets, IPFS, reputation) */
+  readonly erc8004: Erc8004API;
 
   /**
    * Get the raw axios client for advanced use cases.
@@ -136,6 +139,7 @@ export class PlatformClient {
     this.workflows = new WorkflowsAPI(this);
     this.web3 = new Web3API(this);
     this.payments = new PaymentsAPI(this);
+    this.erc8004 = new Erc8004API(this);
   }
 
   /**

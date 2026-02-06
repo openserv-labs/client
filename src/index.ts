@@ -27,6 +27,13 @@ export type {
   // x402 Payment Types
   X402PaymentRequest,
   X402PaymentResult,
+  // ERC-8004 Types
+  Erc8004DeployRequest,
+  Web3Wallet,
+  ImportWeb3WalletRequest,
+  CallableTrigger,
+  PresignIpfsUrlResponse,
+  SignFeedbackAuthResponse,
 } from "./types";
 
 // Trigger Config Types
@@ -53,6 +60,19 @@ export { TasksAPI } from "./tasks-api";
 export { WorkflowsAPI } from "./workflows-api";
 export { Web3API } from "./web3-api";
 export { PaymentsAPI } from "./payments-api";
+export { Erc8004API } from "./erc8004-api";
+export type { RegisterOnChainResult } from "./erc8004-api";
+
+// ERC-8004 contract config and helpers
+export type { Erc8004ChainConfig } from "./erc8004-contracts";
+export {
+  ERC8004_MAINNET_CONTRACTS,
+  ERC8004_TESTNET_CONTRACTS,
+  ERC8004_CHAINS,
+  getErc8004Chain,
+  getErc8004Contracts,
+  listErc8004ChainIds,
+} from "./erc8004-contracts";
 
 // Integration types
 export type { IntegrationConnection } from "./integrations-api";

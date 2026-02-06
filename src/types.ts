@@ -234,6 +234,117 @@ export interface UsdcTopupResult {
 }
 
 // ============================================================================
+// ERC-8004 Types
+// ============================================================================
+
+/**
+ * Request body for deploying a workspace to ERC-8004.
+ */
+export interface Erc8004DeployRequest {
+  /** ERC-8004 agent ID in format "chainId:tokenId" */
+  erc8004AgentId: string;
+  /** JSON-stringified registration file (agent card) */
+  stringifiedAgentCard: string;
+  /** Transaction hash of the latest on-chain deployment */
+  latestDeploymentTransactionHash?: string;
+  /** Timestamp of the latest deployment */
+  latestDeploymentTimestamp?: Date;
+  /** Wallet address that performed the deployment */
+  walletAddress?: string;
+  /** Network name (e.g., "base") */
+  network?: string;
+  /** Chain ID (e.g., 8453 for Base mainnet) */
+  chainId?: number;
+  /** RPC URL for the chain */
+  rpcUrl?: string;
+  /**
+   * If true, swap USDC in the workspace wallet to ETH for gas before
+   * the on-chain deployment transaction.
+   *
+   * **Not yet implemented.** When set, the deploy method will throw an
+   * error explaining the feature is coming soon.
+   *
+   * Note: even without this flag, if deploy fails for any reason (e.g.
+   * insufficient ETH for gas), the error is automatically enriched with
+   * the workspace wallet address and funding instructions.
+   */
+  swap?: boolean;
+}
+
+/**
+ * Web3 wallet associated with a workspace for ERC-8004 operations.
+ */
+export interface Web3Wallet {
+  /** Wallet record ID */
+  id: string;
+  /** Whether the agent has been deployed to the blockchain */
+  deployed: boolean;
+  /** ERC-8004 agent ID in format "chainId:tokenId", null if not yet deployed */
+  erc8004AgentId: string | null;
+  /** JSON-stringified agent card (registration file), null if not yet deployed */
+  stringifiedAgentCard: string | null;
+  /** Wallet address on the blockchain */
+  address: string | null;
+  /** Network name (e.g., "base") */
+  network: string | null;
+  /** Chain ID (e.g., 8453 for Base mainnet) */
+  chainId: number | null;
+  /** When the wallet record was created */
+  createdAt: string;
+  /** When the wallet record was last updated */
+  updatedAt: string;
+}
+
+/**
+ * Request body for importing an existing web3 wallet into a workspace.
+ */
+export interface ImportWeb3WalletRequest {
+  /** Wallet address */
+  address: string;
+  /** Network name (e.g., "base") */
+  network: string;
+  /** Chain ID (e.g., 8453 for Base mainnet) */
+  chainId: number;
+  /** Wallet private key */
+  privateKey: string;
+}
+
+/**
+ * A callable trigger exposed by a workspace, used during ERC-8004 deployment
+ * to register the agent's available services on-chain.
+ */
+export interface CallableTrigger {
+  /** Trigger name */
+  name: string;
+  /** Trigger description */
+  description?: string | null;
+  /** Input schema for the trigger */
+  inputSchema: unknown;
+  /** JSON schema for the trigger input */
+  jsonSchema?: unknown | null;
+  /** Web endpoint URL */
+  webEndpoint: string;
+  /** HTTP endpoint URL */
+  httpEndpoint?: string | null;
+}
+
+/**
+ * Response from presigning an IPFS upload URL.
+ */
+export interface PresignIpfsUrlResponse {
+  /** Signed Pinata URL for IPFS uploads (expires in 60 seconds) */
+  url: string;
+}
+
+/**
+ * Response from signing feedback auth for a buyer.
+ */
+export interface SignFeedbackAuthResponse {
+  /** The signed feedback auth message */
+  signature: string;
+}
+
+// ============================================================================
 // x402 Payment Types
 // ============================================================================
 
