@@ -25,60 +25,74 @@ export interface InputSchema {
 
 /**
  * Configuration for a webhook trigger.
+ * Discriminated on `type: "webhook"`.
  */
 export interface WebhookTriggerConfig {
   type: "webhook";
+  /** Trigger ID (used when syncing existing triggers) */
+  id?: string;
   /** Display name for the trigger (shown in listings and UI) */
   name?: string;
   /** Description of what this trigger does */
   description?: string;
-  /** Input schema for webhook payload validation */
-  input?: InputSchema;
   /** Whether to wait for workflow completion before responding */
   waitForCompletion?: boolean;
   /** Timeout in seconds (default: 180) */
   timeout?: number;
+  /** JSON Schema for webhook payload validation */
+  inputSchema?: Record<string, unknown>;
 }
 
 /**
  * Configuration for an x402 (paid) trigger.
+ * Discriminated on `type: "x402"`.
  */
 export interface X402TriggerConfig {
   type: "x402";
+  /** Trigger ID (used when syncing existing triggers) */
+  id?: string;
   /** Display name for the service (e.g., "AI Research Assistant") - shown in x402-services listing */
   name?: string;
   /** Description of what this service does - shown in x402-services listing */
   description?: string;
   /** Price in USD (e.g., "0.01") */
-  price: string;
-  /** Input schema for request validation */
-  input?: InputSchema;
+  x402Pricing: string;
+  /** Wallet address to receive payments */
+  x402WalletAddress?: string;
   /** Timeout in seconds (default: 180) */
   timeout?: number;
-  /** Wallet address to receive payments */
-  walletAddress?: string;
+  /** JSON Schema for request validation */
+  inputSchema?: Record<string, unknown>;
+  /** x402 triggers always wait for completion */
+  waitForCompletion: true;
 }
 
 /**
  * Configuration for a cron (scheduled) trigger.
+ * Discriminated on `type: "cron"`.
  */
 export interface CronTriggerConfig {
   type: "cron";
+  /** Trigger ID (used when syncing existing triggers) */
+  id?: string;
   /** Display name for the trigger (shown in listings and UI) */
   name?: string;
   /** Description of what this trigger does */
   description?: string;
   /** Cron expression (e.g., "0 9 * * *" for daily at 9 AM) */
   schedule: string;
-  /** Timezone (default: "UTC") */
-  timezone?: string;
+  /** Timezone as IANA time zone name (default: "UTC") */
+  timezone: string;
 }
 
 /**
  * Configuration for a manual trigger.
+ * Discriminated on `type: "manual"`.
  */
 export interface ManualTriggerConfig {
   type: "manual";
+  /** Trigger ID (used when syncing existing triggers) */
+  id?: string;
   /** Display name for the trigger (shown in listings and UI) */
   name?: string;
   /** Description of what this trigger does */
@@ -86,7 +100,8 @@ export interface ManualTriggerConfig {
 }
 
 /**
- * Union type for all trigger configurations.
+ * Discriminated union of all trigger configurations.
+ * Discriminate on the `type` field to narrow to a specific trigger type.
  */
 export type TriggerConfig =
   | WebhookTriggerConfig
@@ -100,19 +115,18 @@ export type TriggerConfig =
 
 /**
  * Factory functions for creating type-safe trigger configurations.
+ * Each factory accepts user-friendly parameters and returns a flat,
+ * properly typed config with API-ready field names.
  *
  * @example
  * ```typescript
- * import { triggers, triggerConfigToProps } from '@openserv-labs/client';
+ * import { triggers } from '@openserv-labs/client';
  *
- * // Create a webhook trigger config
- * const webhookConfig = triggers.webhook({
- *   input: { query: { type: 'string' } },
- *   waitForCompletion: true
- * });
+ * const webhook = triggers.webhook({ waitForCompletion: true });
+ * // { type: 'webhook', waitForCompletion: true, timeout: 180 }
  *
- * // Convert to API props
- * const props = triggerConfigToProps(webhookConfig);
+ * const x402 = triggers.x402({ price: '0.01' });
+ * // { type: 'x402', x402Pricing: '0.01', timeout: 180 }
  * ```
  */
 export const triggers = {
@@ -129,7 +143,13 @@ export const triggers = {
     timeout?: number;
   }): WebhookTriggerConfig => ({
     type: "webhook" as const,
-    ...opts,
+    ...(opts?.name && { name: opts.name }),
+    ...(opts?.description && { description: opts.description }),
+    waitForCompletion: opts?.waitForCompletion ?? false,
+    timeout: opts?.timeout ?? 180,
+    ...(opts?.input && {
+      inputSchema: inputSchemaToJsonSchema(opts.input),
+    }),
   }),
 
   /**
@@ -149,7 +169,17 @@ export const triggers = {
     walletAddress?: string;
   }): X402TriggerConfig => ({
     type: "x402" as const,
-    ...opts,
+    ...(opts.name && { name: opts.name }),
+    ...(opts.description && { description: opts.description }),
+    x402Pricing: opts.price,
+    waitForCompletion: true,
+    timeout: opts.timeout ?? 180,
+    ...(opts.walletAddress && {
+      x402WalletAddress: opts.walletAddress,
+    }),
+    ...(opts.input && {
+      inputSchema: inputSchemaToJsonSchema(opts.input),
+    }),
   }),
 
   /**
@@ -166,7 +196,10 @@ export const triggers = {
     timezone?: string;
   }): CronTriggerConfig => ({
     type: "cron" as const,
-    ...opts,
+    ...(opts.name && { name: opts.name }),
+    ...(opts.description && { description: opts.description }),
+    schedule: opts.schedule,
+    timezone: opts.timezone || "UTC",
   }),
 
   /**
@@ -179,7 +212,8 @@ export const triggers = {
     description?: string;
   }): ManualTriggerConfig => ({
     type: "manual" as const,
-    ...opts,
+    ...(opts?.name && { name: opts.name }),
+    ...(opts?.description && { description: opts.description }),
   }),
 };
 
@@ -221,57 +255,6 @@ export function inputSchemaToJsonSchema(
 }
 
 /**
- * Convert a trigger configuration to API props format.
- * @param config - The trigger configuration
- * @returns Props object for the trigger API
- *
- * @example
- * ```typescript
- * const config = triggers.x402({ price: '0.01' });
- * const props = triggerConfigToProps(config);
- * // props = { x402Pricing: '0.01', timeout: 180 }
- * ```
- */
-export function triggerConfigToProps(
-  config: TriggerConfig,
-): Record<string, unknown> {
-  switch (config.type) {
-    case "webhook":
-      return {
-        waitForCompletion: config.waitForCompletion ?? false,
-        timeout: config.timeout ?? 180,
-        ...(config.input && {
-          inputSchema: inputSchemaToJsonSchema(config.input),
-        }),
-      };
-
-    case "x402":
-      return {
-        x402Pricing: config.price,
-        timeout: config.timeout ?? 180,
-        ...(config.walletAddress && {
-          x402WalletAddress: config.walletAddress,
-        }),
-        ...(config.input && {
-          inputSchema: inputSchemaToJsonSchema(config.input),
-        }),
-      };
-
-    case "cron":
-      return {
-        schedule: config.schedule,
-        timezone: config.timezone || "UTC",
-      };
-
-    case "manual":
-      return {};
-
-    default:
-      return {};
-  }
-}
-
-/**
  * API for managing workflow triggers.
  *
  * @example
@@ -303,7 +286,7 @@ export class TriggersAPI {
    * @param params.name - Display name for the trigger (e.g., "AI Research Assistant")
    * @param params.description - Description of what this trigger does
    * @param params.integrationConnectionId - Integration connection ID (e.g., from getOrCreateConnection)
-   * @param params.props - Trigger properties (use triggerConfigToProps helper)
+   * @param params.props - Trigger properties
    * @param params.trigger_name - Optional specific trigger name
    * @returns The created trigger
    */

@@ -1,6 +1,6 @@
 import type { PlatformClient } from "./client";
+import type { TriggerConfig } from "./triggers-api";
 import type {
-  TriggerDefinition,
   TaskDefinition,
   EdgeDefinition,
   WorkflowData,
@@ -38,7 +38,7 @@ export class Workflow {
    * Sync the workflow with a new configuration (declarative update)
    */
   async sync(config: {
-    triggers?: TriggerDefinition[];
+    triggers?: TriggerConfig[];
     tasks?: TaskDefinition[];
     edges?: EdgeDefinition[];
   }): Promise<void> {
@@ -55,6 +55,21 @@ export class Workflow {
     this.tasks = updated.tasks;
     this.edges = updated.edges;
     this.status = updated.status;
+  }
+
+  /**
+   * Add an agent to this workflow's workspace.
+   *
+   * Required before assigning tasks to agents not yet in the workspace.
+   * Called automatically by sync() when tasks reference new agents.
+   *
+   * @param agentId - The agent ID to add
+   */
+  async addAgent(agentId: number): Promise<void> {
+    await this.client.workflows.addAgent({ id: this.id, agentId });
+    // Refresh agents list
+    const updated = await this.client.workflows.get({ id: this.id });
+    this.agents = updated.agents;
   }
 
   /**

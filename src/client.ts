@@ -30,6 +30,9 @@ const PLATFORM_URL = process.env.OPENSERV_API_URL || "https://api.openserv.ai";
 export class PlatformClient {
   private _apiClient: AxiosInstance;
 
+  /** Wallet address, set by authenticate() or manually. Used as a fallback for x402 trigger wallet resolution. */
+  walletAddress?: string;
+
   /** API for managing agents */
   readonly agents: AgentsAPI;
   /** API for managing integration connections */
@@ -161,9 +164,10 @@ export class PlatformClient {
       return "";
     }
 
-    // Create wallet
+    // Create wallet and store address for x402 wallet resolution
     const wallet = new ethers.Wallet(walletKey);
     const walletAddress = wallet.address;
+    this.walletAddress = walletAddress;
 
     // Step 1: Get nonce from platform
     const nonceResponse = await this._apiClient.post<NonceResponse>(
@@ -217,5 +221,22 @@ Issued At: ${issuedAt}`;
     this._apiClient.defaults.headers.common["x-openserv-key"] = apiKey;
 
     return apiKey;
+  }
+
+  /**
+   * Resolve wallet address from stored state or environment.
+   *
+   * Returns `this.walletAddress` (set by `authenticate()`) if available,
+   * otherwise derives the address from `WALLET_PRIVATE_KEY` environment variable.
+   * Per-trigger overrides are handled at the call site, not here.
+   *
+   * @returns The resolved wallet address, or undefined if no wallet is available
+   */
+  resolveWalletAddress(): string | undefined {
+    if (this.walletAddress) return this.walletAddress;
+    if (process.env.WALLET_PRIVATE_KEY) {
+      return new ethers.Wallet(process.env.WALLET_PRIVATE_KEY).address;
+    }
+    return undefined;
   }
 }

@@ -12,7 +12,6 @@ export type {
   MarketplaceAgent,
   MarketplaceAgentsResponse,
   OutputOption,
-  TriggerDefinition,
   TaskDefinition,
   EdgeDefinition,
   WorkflowConfig,
@@ -42,11 +41,7 @@ export type {
 } from "./triggers-api";
 
 // Trigger factory and helpers
-export {
-  triggers,
-  inputSchemaToJsonSchema,
-  triggerConfigToProps,
-} from "./triggers-api";
+export { triggers, inputSchemaToJsonSchema } from "./triggers-api";
 
 // Classes
 export { PlatformClient } from "./client";

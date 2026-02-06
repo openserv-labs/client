@@ -2,13 +2,13 @@ import type { PlatformClient } from "./client";
 import type {
   WorkflowConfig,
   WorkflowData,
-  TriggerDefinition,
   TaskDefinition,
   EdgeDefinition,
   Edge,
   IdResponse,
   Task,
 } from "./types";
+import type { TriggerConfig } from "./triggers-api";
 import { Workflow } from "./workflow";
 
 /**
@@ -68,8 +68,13 @@ export class WorkflowsAPI {
    * ```
    */
   async create(config: WorkflowConfig): Promise<Workflow> {
+    // Derive agentIds from tasks, merge with any explicitly provided ones
+    const taskAgentIds = (config.tasks || []).map((t) => t.agentId);
+    const allAgentIds = [
+      ...new Set([...taskAgentIds, ...(config.agentIds || [])]),
+    ];
     // Convert agentIds to the format expected by the API
-    const agents = config.agentIds.map((id) => ({
+    const agents = allAgentIds.map((id) => ({
       id: typeof id === "string" ? parseInt(id) : id,
     }));
 
@@ -235,6 +240,32 @@ export class WorkflowsAPI {
   }
 
   /**
+   * Add an agent to an existing workflow's workspace.
+   *
+   * This is required before assigning tasks to agents that aren't yet
+   * members of the workspace. Called automatically by sync() when tasks
+   * reference agents not already in the workspace.
+   *
+   * @param params - Parameters object
+   * @param params.id - The workflow ID
+   * @param params.agentId - The agent ID to add
+   *
+   * @example
+   * ```typescript
+   * // Add an agent to a workspace so it can be assigned tasks
+   * await client.workflows.addAgent({ id: workflowId, agentId: 456 });
+   * ```
+   */
+  async addAgent(params: {
+    id: number | string;
+    agentId: number;
+  }): Promise<void> {
+    await this.client.post(`/workspaces/${params.id}/agent`, {
+      agentId: params.agentId,
+    });
+  }
+
+  /**
    * Sync workflow with declarative configuration.
    *
    * This allows updating triggers, tasks, and edges in a single call.
@@ -248,7 +279,7 @@ export class WorkflowsAPI {
    */
   async sync(params: {
     id: number | string;
-    triggers?: TriggerDefinition[];
+    triggers?: TriggerConfig[];
     tasks?: TaskDefinition[];
     edges?: EdgeDefinition[];
   }): Promise<void> {
@@ -270,12 +301,46 @@ export class WorkflowsAPI {
     const syncPayload: any = {};
 
     // Get current workflow state for ID mapping
-    const currentTriggers = await this.client
-      .get<any[]>(`/workspaces/${workflowId}/triggers`)
-      .catch(() => [] as any[]);
-    const currentTasks = await this.client
-      .get<any[]>(`/workspaces/${workflowId}/tasks`)
-      .catch(() => [] as any[]);
+    const [currentTriggers, currentTasks, currentWorkspace] = await Promise.all(
+      [
+        this.client
+          .get<any[]>(`/workspaces/${workflowId}/triggers`)
+          .catch(() => [] as any[]),
+        this.client
+          .get<any[]>(`/workspaces/${workflowId}/tasks`)
+          .catch(() => [] as any[]),
+        this.client.get<any>(`/workspaces/${workflowId}`).catch(() => null),
+      ],
+    );
+
+    // Ensure all required agents are in the workspace before syncing.
+    // The sync endpoint rejects tasks assigned to agents not in the workspace,
+    // so we add any missing agents first.
+    if (config.tasks && currentWorkspace) {
+      const currentAgentIds = new Set<number>(
+        (currentWorkspace.agents || []).map((a: { id: number }) => a.id),
+      );
+      const requiredAgentIds = new Set<number>(
+        config.tasks
+          .map((t) =>
+            typeof t.agentId === "string" ? parseInt(t.agentId) : t.agentId,
+          )
+          .filter((id): id is number => id !== undefined && !isNaN(id)),
+      );
+
+      // Also include explicitly provided agentIds
+      if (config.agentIds) {
+        for (const id of config.agentIds) {
+          requiredAgentIds.add(typeof id === "string" ? parseInt(id) : id);
+        }
+      }
+
+      for (const agentId of requiredAgentIds) {
+        if (!currentAgentIds.has(agentId)) {
+          await this.addAgent({ id: workflowId, agentId });
+        }
+      }
+    }
 
     // Map names to IDs for existing resources
     const triggerNameToId = new Map<string, string>();
@@ -292,21 +357,31 @@ export class WorkflowsAPI {
     if (config.triggers) {
       const triggersWithConnections = await Promise.all(
         config.triggers.map(async (t) => {
-          // Get the actual integration connection ID (UUID)
-          let integrationConnectionId = t.integrationConnectionId;
-          if (!integrationConnectionId && t.type) {
-            const identifier = this.getIntegrationIdentifier(t.type);
-            integrationConnectionId =
-              await this.client.integrations.getOrCreateConnection(identifier);
+          // Destructure metadata; the rest are API-ready props
+          const { type, id, name, description, ...props } = t;
+          const triggerName = name || type;
+
+          // Resolve integration connection from type
+          const identifier = this.getIntegrationIdentifier(type);
+          const integrationConnectionId =
+            await this.client.integrations.getOrCreateConnection(identifier);
+
+          // Auto-inject wallet for x402 triggers if not already set
+          const propsRecord = props as Record<string, unknown>;
+          if (type === "x402" && !propsRecord.x402WalletAddress) {
+            const wallet = this.client.resolveWalletAddress();
+            if (wallet) {
+              propsRecord.x402WalletAddress = wallet;
+            }
           }
 
           return {
-            id: t.id || triggerNameToId.get(t.name) || `new-${t.name}`,
-            name: t.name,
-            description: t.name,
+            id: id || triggerNameToId.get(triggerName) || `new-${triggerName}`,
+            name: triggerName,
+            description: description || triggerName,
             integrationConnectionId: integrationConnectionId || "",
-            trigger_name: this.getTriggerName(t.type),
-            props: t.props || {},
+            trigger_name: this.getTriggerName(type),
+            props,
             attributes: {},
           };
         }),
@@ -363,10 +438,12 @@ export class WorkflowsAPI {
       // Add trigger nodes
       if (config.triggers) {
         for (const t of config.triggers) {
+          const triggerName = t.name || t.type;
+          const tId = t.id;
           const triggerId =
-            t.id || triggerNameToId.get(t.name) || `new-${t.name}`;
+            tId || triggerNameToId.get(triggerName) || `new-${triggerName}`;
           nodes.push({
-            id: `trigger-${t.name}`,
+            id: `trigger-${triggerName}`,
             type: "trigger",
             triggerId,
             position: { x: 0, y: 0 },
@@ -423,19 +500,34 @@ export class WorkflowsAPI {
         config.triggers.length > 0 &&
         config.tasks.length > 0
       ) {
-        // Auto-generate edges connecting triggers to the first task
-        const firstTask = config.tasks[0];
+        // Auto-generate sequential edges: trigger -> task1 -> task2 -> ... -> taskN
+        const tasks = config.tasks;
+        const firstTask = tasks[0];
         if (firstTask) {
-          const firstTaskName = firstTask.name;
+          // Connect each trigger to the first task
           config.triggers.forEach((trigger, i) => {
+            const autoTriggerName = trigger.name || trigger.type;
             edges.push({
-              id: `edge-auto-${i}`,
-              source: `trigger-${trigger.name}`,
-              target: `task-${firstTaskName}`,
+              id: `edge-auto-trigger-${i}`,
+              source: `trigger-${autoTriggerName}`,
+              target: `task-${firstTask.name}`,
               sourcePort: "default",
               targetPort: "input",
             });
           });
+
+          // Chain tasks sequentially
+          for (let i = 0; i < tasks.length - 1; i++) {
+            const currentTask = tasks[i]!;
+            const nextTask = tasks[i + 1]!;
+            edges.push({
+              id: `edge-auto-task-${i}`,
+              source: `task-${currentTask.name}`,
+              target: `task-${nextTask.name}`,
+              sourcePort: "default",
+              targetPort: "input",
+            });
+          }
         }
       }
 

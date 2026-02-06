@@ -2,7 +2,8 @@ import { ethers } from "ethers";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PlatformClient } from "./client";
-import { type TriggerConfig, triggerConfigToProps } from "./triggers-api";
+import type { TriggerConfig } from "./triggers-api";
+import type { EdgeDefinition } from "./types";
 
 // ============================================================================
 // Types
@@ -79,13 +80,30 @@ export interface ProvisionConfig {
     name: string;
     /** Trigger configuration (use triggers factory) */
     trigger: TriggerConfig;
-    /** Optional task configuration */
+    /** Single task shorthand (backward compat). Omit agentId to assign to the provisioned agent. */
     task?: {
       /** Task description */
       description?: string;
       /** Detailed task body */
       body?: string;
     };
+    /**
+     * Multi-task support. Each task can specify an agentId (marketplace agent).
+     * Omit agentId to assign to the provisioned agent.
+     * When provided, takes precedence over `task`.
+     */
+    tasks?: Array<{
+      name: string;
+      description: string;
+      body?: string;
+      input?: string;
+      /** Agent ID to assign the task to. Omit for the provisioned agent. */
+      agentId?: number;
+    }>;
+    /** Custom edges between trigger and tasks. If omitted, sequential edges are auto-generated. */
+    edges?: EdgeDefinition[];
+    /** Additional agent IDs to include in the workspace beyond those in tasks (e.g., observers). */
+    agentIds?: number[];
   };
 }
 
@@ -194,23 +212,6 @@ function formatAxiosError(error: unknown): string {
         data: axiosError.response.data,
       })
     : axiosError.message || "Unknown error";
-}
-
-/**
- * Inject x402 trigger properties (wallet address and waitForCompletion)
- */
-function injectX402Props(
-  props: Record<string, unknown>,
-  walletAddress: string,
-  triggerType: string,
-): Record<string, unknown> {
-  if (triggerType !== "x402") return props;
-
-  return {
-    ...props,
-    x402WalletAddress: props.x402WalletAddress || walletAddress,
-    waitForCompletion: props.waitForCompletion ?? true,
-  };
 }
 
 // ============================================================================
@@ -347,6 +348,9 @@ async function createAuthenticatedClient(privateKey: string): Promise<{
     try {
       // Verify it works by listing agents (a simple authenticated call)
       await client.agents.list();
+      // Always set walletAddress so resolveWalletAddress() works even when
+      // authenticate() is skipped (API-key-reuse path)
+      client.walletAddress = walletAddress;
       logger.info("Using existing user API key");
       return { client, walletAddress };
     } catch {
@@ -478,13 +482,19 @@ async function provisionAgent(
 }
 
 /**
- * Provision a workflow (workspace + trigger + task)
+ * Build sequential edges: trigger -> task1 -> task2 -> ... -> taskN
+ */
+/**
+ * Provision a workflow (workspace + trigger + tasks + edges).
+ *
+ * Uses the declarative workflows.create() for new workflows and workflow.sync()
+ * for updating existing ones. x402 wallet injection is handled automatically by
+ * syncInternal() using client.resolveWalletAddress().
  */
 async function provisionWorkflow(
   client: PlatformClient,
   agentId: number,
   agentName: string,
-  walletAddress: string,
   config: ProvisionConfig["workflow"],
 ): Promise<Omit<ProvisionResult, "agentId" | "apiKey" | "authToken">> {
   const state = readState();
@@ -497,37 +507,40 @@ async function provisionWorkflow(
 
   const existingWorkflow = state.workflows[agentName][workflowName];
 
+  // Convert single task shorthand to tasks array if needed
+  const tasks = config.tasks || [
+    {
+      name: "default-task",
+      description: config.task?.description || "Process the incoming request",
+      body: config.task?.body || "",
+      input: "",
+    },
+  ];
+
+  // Assign provisioned agentId to tasks that don't specify one
+  const tasksWithAgents = tasks.map((t) => ({
+    ...t,
+    agentId: t.agentId || agentId,
+  }));
+
   let workflowId: number | undefined;
   let triggerId: string | undefined;
   let triggerToken: string | undefined;
   let needsCreate = true;
 
   if (existingWorkflow) {
-    // Update existing workflow
+    // Update existing workflow using sync (full idempotency)
     workflowId = existingWorkflow.workspaceId;
     triggerId = existingWorkflow.triggerId;
     triggerToken = existingWorkflow.triggerToken;
     needsCreate = false;
 
     try {
-      // Get existing trigger to preserve required fields
-      const existingTrigger = await client.triggers.get({
-        workflowId,
-        id: triggerId,
-      });
-
-      // Build new props, preserving existing values and injecting x402 props
-      const triggerProps = injectX402Props(
-        { ...existingTrigger.props, ...triggerConfigToProps(config.trigger) },
-        walletAddress,
-        config.trigger.type,
-      );
-
-      await client.triggers.update({
-        workflowId,
-        id: triggerId,
-        name: existingTrigger.name || config.trigger.type,
-        props: triggerProps,
+      const workflow = await client.workflows.get({ id: workflowId });
+      await workflow.sync({
+        triggers: [{ ...config.trigger, id: triggerId }],
+        tasks: tasksWithAgents,
+        ...(config.edges && { edges: config.edges }),
       });
       logger.info(`Updated workflow ${workflowName} (${workflowId})`);
     } catch (error: unknown) {
@@ -550,116 +563,37 @@ async function provisionWorkflow(
   }
 
   if (needsCreate) {
-    // Map trigger type to integration identifier
-    const triggerTypeToIntegration: Record<string, string> = {
-      x402: "x402-trigger",
-      webhook: "webhook-trigger",
-      cron: "cron-trigger",
-      manual: "manual-trigger",
-    };
-
-    const integrationIdentifier =
-      triggerTypeToIntegration[config.trigger.type] || "manual-trigger";
-
-    // Create trigger props with x402 properties injected
-    const triggerProps = injectX402Props(
-      triggerConfigToProps(config.trigger) as Record<string, unknown>,
-      walletAddress,
-      config.trigger.type,
-    );
-
-    // Step 1: Create workflow without triggers/tasks (avoids sync API issues)
+    // Create workflow with full declarative config
+    // syncInternal() handles x402 wallet injection, integration connection resolution,
+    // and auto-generates sequential edges when none are provided
     const workflow = await client.workflows.create({
       name: `${workflowName} Workflow`,
-      goal: config.task?.description || "Process requests",
-      agentIds: [agentId],
+      goal:
+        config.task?.description || tasks[0]?.description || "Process requests",
+      agentIds: config.agentIds,
+      triggers: [config.trigger],
+      tasks: tasksWithAgents,
+      ...(config.edges && { edges: config.edges }),
     });
     workflowId = workflow.id;
     logger.info(`Created workflow ${workflowName} (${workflowId})`);
 
-    // Step 2: Get or create integration connection for the trigger type
-    const integrationConnectionId =
-      await client.integrations.getOrCreateConnection(integrationIdentifier);
-
-    // Step 3: Create trigger using direct API
-    // Use the trigger's name/description if provided, otherwise default to type
-    const triggerName = config.trigger.name || config.trigger.type;
-    const triggerDescription = config.trigger.description;
-
-    const trigger = await client.triggers.create({
-      workflowId,
-      name: triggerName,
-      description: triggerDescription,
-      integrationConnectionId,
-      props: triggerProps,
-    });
-    triggerId = trigger.id;
-    triggerToken = trigger.token || "";
+    // Get trigger info from the created workflow
+    const trigger = workflow.triggers[0];
+    if (trigger) {
+      triggerId = trigger.id;
+      triggerToken = trigger.token || "";
+    }
     logger.info(
       `Created trigger ${triggerId} (token: ${triggerToken || "N/A"})`,
     );
 
-    // Step 4: Create task using direct API
-    const task = await client.tasks.create({
-      workflowId,
-      agentId,
-      description: config.task?.description || "Process the incoming request",
-      body: config.task?.body || "",
-      input: "",
-    });
-    const taskId = task.id;
-    logger.info(`Created task ${taskId} for workflow ${workflowId}`);
+    // Activate trigger
+    if (triggerId) {
+      await client.triggers.activate({ workflowId, id: triggerId });
+    }
 
-    // Step 5: Create workflow nodes and edges to link trigger to task
-    const triggerNodeId = `trigger-${triggerId}`;
-    const taskNodeId = `task-${taskId}`;
-
-    const workflowNodes = [
-      {
-        id: triggerNodeId,
-        type: "trigger" as const,
-        triggerId,
-        position: { x: 0, y: 100 },
-        inputPorts: [] as { id: string }[],
-        outputPorts: [{ id: "default" }],
-        isEndNode: false as const,
-      },
-      {
-        id: taskNodeId,
-        type: "task" as const,
-        taskId,
-        position: { x: 300, y: 100 },
-        inputPorts: [{ id: "input" }],
-        outputPorts: [{ id: "default" }],
-        isEndNode: true,
-      },
-    ];
-
-    const workflowEdges = [
-      {
-        id: `edge-${triggerId}-${taskId}`,
-        source: triggerNodeId,
-        target: taskNodeId,
-        sourcePort: "default",
-        targetPort: "input",
-      },
-    ];
-
-    await client.put(`/workspaces/${workflowId}/workflow`, {
-      workflow: {
-        nodes: workflowNodes,
-        edges: workflowEdges,
-        lastUpdatedTimestamp: Date.now(),
-      },
-    });
-    logger.info(
-      `Created workflow edges linking trigger ${triggerId} to task ${taskId}`,
-    );
-
-    // Step 6: Activate trigger
-    await client.triggers.activate({ workflowId, id: triggerId });
-
-    // Step 7: Set workspace to running
+    // Set workspace to running
     await client.workflows.setRunning({ id: workflowId });
 
     // Re-read state to avoid overwriting concurrent changes
@@ -669,8 +603,8 @@ async function provisionWorkflow(
     }
     freshState.workflows[agentName][workflowName] = {
       workspaceId: workflowId,
-      triggerId,
-      triggerToken,
+      triggerId: triggerId || "",
+      triggerToken: triggerToken || "",
     };
     writeState(freshState);
 
@@ -759,7 +693,8 @@ export async function provision(
   const { privateKey } = await getOrCreateWallet();
 
   // Create authenticated client (reuses saved API key for session continuity)
-  const { client, walletAddress } = await createAuthenticatedClient(privateKey);
+  // walletAddress is set on client.walletAddress for x402 resolution
+  const { client } = await createAuthenticatedClient(privateKey);
 
   // Provision agent (returns agentId, apiKey, and authToken)
   const { agentId, apiKey, authToken } = await provisionAgent(
@@ -780,12 +715,11 @@ export async function provision(
     }
   }
 
-  // Provision workflow (pass agent name and wallet address for x402 triggers)
+  // Provision workflow (wallet address resolved automatically via client.resolveWalletAddress())
   const workflowResult = await provisionWorkflow(
     client,
     agentId,
     config.agent.name,
-    walletAddress,
     config.workflow,
   );
 

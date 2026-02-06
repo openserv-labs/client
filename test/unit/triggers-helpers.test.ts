@@ -1,16 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import {
-  triggers,
-  inputSchemaToJsonSchema,
-  triggerConfigToProps,
-} from "../../src/triggers-api";
+import { triggers, inputSchemaToJsonSchema } from "../../src/triggers-api";
 
 describe("Triggers Helpers", () => {
   describe("triggers factory", () => {
-    it("should create a webhook trigger config", () => {
+    it("should create a webhook trigger config with defaults", () => {
       const config = triggers.webhook();
       assert.strictEqual(config.type, "webhook");
+      assert.strictEqual(config.waitForCompletion, false);
+      assert.strictEqual(config.timeout, 180);
     });
 
     it("should create a webhook trigger config with options", () => {
@@ -23,13 +21,20 @@ describe("Triggers Helpers", () => {
       assert.strictEqual(config.type, "webhook");
       assert.strictEqual(config.waitForCompletion, true);
       assert.strictEqual(config.timeout, 300);
-      assert.deepStrictEqual(config.input, { query: { type: "string" } });
+      assert.ok(config.inputSchema);
+      const inputSchema = config.inputSchema as Record<string, unknown>;
+      assert.strictEqual(
+        inputSchema.$schema,
+        "http://json-schema.org/draft-07/schema#",
+      );
     });
 
     it("should create an x402 trigger config", () => {
       const config = triggers.x402({ price: "0.01" });
       assert.strictEqual(config.type, "x402");
-      assert.strictEqual(config.price, "0.01");
+      assert.strictEqual(config.x402Pricing, "0.01");
+      assert.strictEqual(config.timeout, 180);
+      assert.strictEqual(config.x402WalletAddress, undefined);
     });
 
     it("should create an x402 trigger config with all options", () => {
@@ -41,10 +46,10 @@ describe("Triggers Helpers", () => {
       });
 
       assert.strictEqual(config.type, "x402");
-      assert.strictEqual(config.price, "0.05");
+      assert.strictEqual(config.x402Pricing, "0.05");
       assert.strictEqual(config.timeout, 600);
-      assert.strictEqual(config.walletAddress, "0x123");
-      assert.ok(config.input?.prompt);
+      assert.strictEqual(config.x402WalletAddress, "0x123");
+      assert.ok(config.inputSchema);
     });
 
     it("should create an x402 trigger config with name and description", () => {
@@ -61,7 +66,7 @@ describe("Triggers Helpers", () => {
         config.description,
         "Get comprehensive research reports on any topic powered by AI",
       );
-      assert.strictEqual(config.price, "0.01");
+      assert.strictEqual(config.x402Pricing, "0.01");
     });
 
     it("should create a webhook trigger config with name and description", () => {
@@ -77,6 +82,7 @@ describe("Triggers Helpers", () => {
         config.description,
         "Receives data from external systems for processing",
       );
+      assert.strictEqual(config.waitForCompletion, true);
     });
 
     it("should create a cron trigger config with name and description", () => {
@@ -92,6 +98,8 @@ describe("Triggers Helpers", () => {
         config.description,
         "Generates daily analytics reports",
       );
+      assert.strictEqual(config.schedule, "0 9 * * *");
+      assert.strictEqual(config.timezone, "UTC");
     });
 
     it("should create a manual trigger config with name and description", () => {
@@ -105,10 +113,11 @@ describe("Triggers Helpers", () => {
       assert.strictEqual(config.description, "For testing workflows manually");
     });
 
-    it("should create a cron trigger config", () => {
+    it("should create a cron trigger config with default timezone", () => {
       const config = triggers.cron({ schedule: "0 9 * * *" });
       assert.strictEqual(config.type, "cron");
       assert.strictEqual(config.schedule, "0 9 * * *");
+      assert.strictEqual(config.timezone, "UTC");
     });
 
     it("should create a cron trigger config with timezone", () => {
@@ -209,93 +218,6 @@ describe("Triggers Helpers", () => {
         .limit as Record<string, unknown>;
 
       assert.strictEqual(limitProp.default, 10);
-    });
-  });
-
-  describe("triggerConfigToProps", () => {
-    it("should convert webhook config to props", () => {
-      const config = triggers.webhook({
-        waitForCompletion: true,
-        timeout: 300,
-      });
-
-      const props = triggerConfigToProps(config);
-
-      assert.strictEqual(props.waitForCompletion, true);
-      assert.strictEqual(props.timeout, 300);
-    });
-
-    it("should use default values for webhook config", () => {
-      const config = triggers.webhook();
-      const props = triggerConfigToProps(config);
-
-      assert.strictEqual(props.waitForCompletion, false);
-      assert.strictEqual(props.timeout, 180);
-    });
-
-    it("should convert webhook config with input schema", () => {
-      const config = triggers.webhook({
-        input: { query: { type: "string" } },
-      });
-
-      const props = triggerConfigToProps(config);
-
-      assert.ok(props.inputSchema);
-      const inputSchema = props.inputSchema as Record<string, unknown>;
-      assert.strictEqual(
-        inputSchema.$schema,
-        "http://json-schema.org/draft-07/schema#",
-      );
-    });
-
-    it("should convert x402 config to props", () => {
-      const config = triggers.x402({
-        price: "0.05",
-        timeout: 600,
-        walletAddress: "0x123",
-      });
-
-      const props = triggerConfigToProps(config);
-
-      assert.strictEqual(props.x402Pricing, "0.05");
-      assert.strictEqual(props.timeout, 600);
-      assert.strictEqual(props.x402WalletAddress, "0x123");
-    });
-
-    it("should use default timeout for x402 config", () => {
-      const config = triggers.x402({ price: "0.01" });
-      const props = triggerConfigToProps(config);
-
-      assert.strictEqual(props.x402Pricing, "0.01");
-      assert.strictEqual(props.timeout, 180);
-      assert.strictEqual(props.x402WalletAddress, undefined);
-    });
-
-    it("should convert cron config to props", () => {
-      const config = triggers.cron({
-        schedule: "0 9 * * *",
-        timezone: "America/New_York",
-      });
-
-      const props = triggerConfigToProps(config);
-
-      assert.strictEqual(props.schedule, "0 9 * * *");
-      assert.strictEqual(props.timezone, "America/New_York");
-    });
-
-    it("should use UTC as default timezone for cron config", () => {
-      const config = triggers.cron({ schedule: "0 0 * * *" });
-      const props = triggerConfigToProps(config);
-
-      assert.strictEqual(props.schedule, "0 0 * * *");
-      assert.strictEqual(props.timezone, "UTC");
-    });
-
-    it("should convert manual config to empty props", () => {
-      const config = triggers.manual();
-      const props = triggerConfigToProps(config);
-
-      assert.deepStrictEqual(props, {});
     });
   });
 });

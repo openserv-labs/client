@@ -1,3 +1,5 @@
+import type { TriggerConfig } from "./triggers-api";
+
 // ============================================================================
 // API Response Types (raw platform responses)
 // ============================================================================
@@ -74,14 +76,6 @@ export interface VerifyResponse {
 // Declarative Config Types
 // ============================================================================
 
-export interface TriggerDefinition {
-  id?: string;
-  name: string;
-  type?: "x402" | "webhook" | "cron" | "manual";
-  integrationConnectionId?: string;
-  props?: Record<string, unknown>;
-}
-
 export interface OutputOption {
   name: string;
   type: "text" | "file" | "json";
@@ -122,8 +116,9 @@ export interface EdgeDefinition {
 export interface WorkflowConfig {
   name: string;
   goal?: string;
-  agentIds: (number | string)[];
-  triggers?: TriggerDefinition[];
+  /** Agent IDs to include in the workspace. Optional -- if omitted, derived from tasks[].agentId. If provided, merged with task-derived IDs. */
+  agentIds?: (number | string)[];
+  triggers?: TriggerConfig[];
   tasks?: TaskDefinition[];
   edges?: EdgeDefinition[];
 }

@@ -145,12 +145,23 @@ await client.workflows.delete({ id: 789 })
 // Set workflow to running state
 await client.workflows.setRunning({ id: 789 })
 
-// Sync workflow configuration
+// Create a fully configured workflow with triggers, tasks, and auto-generated edges
+const pipeline = await client.workflows.create({
+  name: 'Data Pipeline',
+  goal: 'Process and analyze data',
+  triggers: [triggers.webhook({ waitForCompletion: true, timeout: 300 })],
+  tasks: [
+    { name: 'ingest', agentId: 123, description: 'Ingest the data' },
+    { name: 'analyze', agentId: 456, description: 'Analyze the results' }
+  ]
+  // Edges auto-generated: trigger -> ingest -> analyze
+})
+
+// Sync workflow configuration (update existing)
 await client.workflows.sync({
   id: 789,
-  triggers: [{ name: 'webhook', type: 'webhook' }],
-  tasks: [{ name: 'process', agentId: 123, description: 'Process data' }],
-  edges: [{ from: 'trigger:webhook', to: 'task:process' }]
+  triggers: [triggers.webhook({ waitForCompletion: true })],
+  tasks: [{ name: 'process', agentId: 123, description: 'Process data' }]
 })
 ```
 
@@ -186,66 +197,49 @@ await client.tasks.delete({ workflowId: 789, id: 1 })
 
 ### Triggers
 
+Use the `triggers` factory to create type-safe trigger configs, then pass them to `workflows.create()` or `workflow.sync()`:
+
 ```typescript
-import { triggers, triggerConfigToProps } from '@openserv-labs/client'
+import { triggers } from '@openserv-labs/client'
 
-// Create a webhook trigger
-const trigger = await client.triggers.create({
-  workflowId: 789,
-  name: 'My Webhook',
-  type: 'webhook',
-  props: triggerConfigToProps(
-    triggers.webhook({
-      waitForCompletion: true,
-      timeout: 300
-    })
-  )
+// Webhook trigger
+const workflow = await client.workflows.create({
+  name: 'My Workflow',
+  goal: 'Process requests',
+  triggers: [triggers.webhook({ waitForCompletion: true, timeout: 300 })],
+  tasks: [{ name: 'process', agentId: 123, description: 'Handle the request' }]
 })
 
-// Create a cron trigger
-const cronTrigger = await client.triggers.create({
-  workflowId: 789,
-  name: 'Daily Job',
-  type: 'cron',
-  props: triggerConfigToProps(
-    triggers.cron({
-      schedule: '0 9 * * *',
-      timezone: 'America/New_York'
-    })
-  )
+// x402 (paid) trigger
+const paidWorkflow = await client.workflows.create({
+  name: 'Paid Service',
+  goal: 'Premium AI service',
+  triggers: [triggers.x402({
+    name: 'AI Research Assistant',
+    description: 'Get comprehensive research reports on any topic powered by AI',
+    price: '0.01',
+    input: { query: { type: 'string', description: 'Research topic or question' } }
+  })],
+  tasks: [{ name: 'research', agentId: 123, description: 'Research the topic' }]
 })
 
-// Create an x402 (paid) trigger with a beautiful name and description
-const paidTrigger = await client.triggers.create({
-  workflowId: 789,
-  name: 'AI Research Assistant',
-  description: 'Get comprehensive research reports on any topic powered by AI',
-  type: 'x402',
-  props: triggerConfigToProps(
-    triggers.x402({
-      name: 'AI Research Assistant',
-      description: 'Get comprehensive research reports on any topic powered by AI',
-      price: '0.01',
-      input: {
-        query: { type: 'string', description: 'Research topic or question' }
-      }
-    })
-  )
-})
+// Cron (scheduled) trigger
+triggers.cron({ schedule: '0 9 * * *', timezone: 'America/New_York' })
 
+// Manual trigger
+triggers.manual()
+```
+
+#### Low-level Triggers API
+
+For managing individual triggers on existing workflows:
+
+```typescript
 // Get a trigger
 const trigger = await client.triggers.get({ workflowId: 789, id: 'trigger-id' })
 
 // List triggers
 const allTriggers = await client.triggers.list({ workflowId: 789 })
-
-// Update a trigger
-await client.triggers.update({
-  workflowId: 789,
-  id: 'trigger-id',
-  name: 'Updated Name',
-  props: { timeout: 600 }
-})
 
 // Activate a trigger
 await client.triggers.activate({ workflowId: 789, id: 'trigger-id' })
@@ -254,7 +248,7 @@ await client.triggers.activate({ workflowId: 789, id: 'trigger-id' })
 await client.triggers.fire({
   workflowId: 789,
   id: 'trigger-id',
-  payload: { data: 'test' }
+  input: JSON.stringify({ query: 'test' })
 })
 
 // Delete a trigger
@@ -552,9 +546,11 @@ const cronResult = await provision({
 Use the `triggers` factory for type-safe trigger configuration:
 
 ```typescript
-import { triggers, triggerConfigToProps } from '@openserv-labs/client'
+import { triggers } from '@openserv-labs/client'
 
-// Webhook trigger with name and description
+// Each factory accepts user-friendly params and returns a flat, typed config.
+
+// Webhook trigger
 triggers.webhook({
   name: 'Data Ingestion Webhook',
   description: 'Receives data from external systems for processing',
@@ -562,17 +558,18 @@ triggers.webhook({
   waitForCompletion: true,
   timeout: 180
 })
+// { type: 'webhook', name: '...', waitForCompletion: true, timeout: 180, inputSchema: {...} }
 
-// Cron trigger with name and description
+// Cron trigger
 triggers.cron({
   name: 'Daily Report Generator',
   description: 'Generates daily analytics reports every 6 hours',
   schedule: '0 */6 * * *',
   timezone: 'UTC'
 })
+// { type: 'cron', name: '...', schedule: '0 */6 * * *', timezone: 'UTC' }
 
-// x402 (paid) trigger with beautiful name and description
-// These appear in the x402-services listing
+// x402 (paid) trigger — name and description appear in the x402-services listing
 triggers.x402({
   name: 'AI Research Assistant',
   description: 'Get comprehensive research reports on any topic powered by AI',
@@ -581,12 +578,14 @@ triggers.x402({
   timeout: 300,
   walletAddress: '0x...'
 })
+// { type: 'x402', name: '...', x402Pricing: '0.05', timeout: 300, x402WalletAddress: '0x...', inputSchema: {...} }
 
-// Manual trigger with name and description
+// Manual trigger
 triggers.manual({
   name: 'Manual Test Trigger',
   description: 'For testing workflows manually'
 })
+// { type: 'manual', name: '...', description: '...' }
 ```
 
 ## Environment Variables
@@ -617,7 +616,6 @@ import type {
   WorkflowData,
   Task,
   Trigger,
-  TriggerDefinition,
   TaskDefinition,
   EdgeDefinition,
   Edge,
