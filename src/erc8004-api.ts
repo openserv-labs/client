@@ -13,11 +13,7 @@ import { PinataSDK } from "pinata";
 import type { PlatformClient } from "./client";
 import type {
   Erc8004DeployRequest,
-  Web3Wallet,
-  ImportWeb3WalletRequest,
-  CallableTrigger,
   PresignIpfsUrlResponse,
-  SignFeedbackAuthResponse,
   WorkflowData,
 } from "./types";
 import { IDENTITY_REGISTRY_ABI } from "./erc8004-abi.js";
@@ -38,7 +34,7 @@ import { getErc8004Chain, getErc8004Contracts } from "./erc8004-contracts.js";
  * const client = new PlatformClient({ apiKey: 'your-key' });
  *
  * // Generate a web3 wallet for the workspace
- * const wallet = await client.erc8004.generateWallet({ workflowId: 123 });
+ * const wallet = await client.workflows.generateWallet({ id: 123 });
  *
  * // Get a presigned IPFS URL for uploading the agent card
  * const { url } = await client.erc8004.presignIpfsUrl({ workflowId: 123 });
@@ -154,7 +150,7 @@ export class Erc8004API {
 
     let walletAddress: string | null = null;
     try {
-      const wallet = await this.getWallet({ workflowId });
+      const wallet = await this.client.workflows.getWallet({ id: workflowId });
       walletAddress = wallet.address;
     } catch {
       // Wallet may not exist yet
@@ -166,7 +162,7 @@ export class Erc8004API {
         `\n\nNote: automatic USDC-to-ETH swap is coming soon. ` +
         `Once available, pass swap: true to convert USDC in the wallet to ETH for gas.`
       : `\n\nNo wallet found for this workspace. ` +
-        `Generate one first with client.erc8004.generateWallet({ workflowId: ${workflowId} }), ` +
+        `Generate one first with client.workflows.generateWallet({ id: ${workflowId} }), ` +
         `then fund it with ETH and retry.`;
 
     return new Error(originalMessage + fundingHint);
@@ -190,8 +186,9 @@ export class Erc8004API {
    * @param params.privateKey - Funded private key for on-chain transactions (must have ETH for gas)
    * @param params.chainId - Chain ID (default: 8453 for Base mainnet)
    * @param params.rpcUrl - RPC URL (default: "https://mainnet.base.org")
-   * @param params.name - Agent name override (falls back to "ERC-8004 Agent")
-   * @param params.description - Agent description override
+   * @param params.name - Agent name override (defaults: single trigger → trigger name, else workspace name)
+   * @param params.description - Agent description override (defaults: single trigger → trigger description, else workspace goal + service list)
+   * @param params.image - Agent image URL (optional)
    * @returns Deployment result with agentId, IPFS CID, transaction hash, and URLs
    *
    * @example
@@ -216,52 +213,124 @@ export class Erc8004API {
     rpcUrl?: string;
     name?: string;
     description?: string;
+    image?: string;
   }): Promise<RegisterOnChainResult> {
     const {
       workflowId,
       privateKey,
       chainId = 8453,
       rpcUrl = "https://mainnet.base.org",
-      name = "ERC-8004 Agent",
-      description = "Agent registered via OpenServ Platform",
+      image,
     } = params;
 
-    // 1. Get wallet and callable triggers
-    const wallet = await this.getWallet({ workflowId });
-    const callableTriggers = await this.getCallableTriggers({ workflowId });
+    // 1. Get wallet, callable triggers, and workspace data
+    const [wallet, callableTriggers, workspace] = await Promise.all([
+      this.client.workflows.getWallet({ id: workflowId }),
+      this.client.triggers.getCallableTriggers({ workflowId }),
+      this.client.workflows.get({ id: workflowId }),
+    ]);
 
-    // 2. Build ERC-8004 agent card
-    const services = callableTriggers.map((t) => ({
-      name: "WEB",
-      endpoint: t.webEndpoint,
-      triggerName: t.name,
-      description: t.description ?? undefined,
-      ...(t.httpEndpoint
-        ? { httpEndpoint: t.httpEndpoint, inputSchema: t.inputSchema }
-        : {}),
-    }));
+    // Derive name and description from triggers/workspace (matching monorepo logic)
+    let name = params.name;
+    let description = params.description;
+    if (!name || !description) {
+      if (callableTriggers.length === 1 && callableTriggers[0]) {
+        const t = callableTriggers[0];
+        if (!name) name = t.name || workspace.name;
+        if (!description)
+          description = t.description || workspace.goal || "Default";
+      } else {
+        if (!name) name = workspace.name;
+        if (!description) {
+          const triggerBullets = callableTriggers
+            .filter((t) => t.description)
+            .map((t) => `- ${t.name}: ${t.description}`)
+            .join("\n");
+          description = [
+            workspace.goal || "Default",
+            ...(triggerBullets ? [`\nServices:\n${triggerBullets}`] : []),
+          ].join("");
+        }
+      }
+    }
 
+    // 2. Build ERC-8004 agent card (matches monorepo addRegistrationFile format)
+    const baseUrl =
+      this.client.rawClient.defaults.baseURL || "https://api.openserv.ai";
+    const services: Array<Record<string, unknown>> = [];
+
+    // MCP endpoint (machine-facing, aggregates all x402 triggers)
+    const mcpEndpoint = `${baseUrl}/workspaces/${workflowId}/trigger-x402-mcp/mcp`;
+    services.push({
+      name: "MCP",
+      endpoint: mcpEndpoint,
+      version: "2025-06-18",
+    });
+
+    for (const t of callableTriggers) {
+      const meta: Record<string, unknown> = {};
+      if (t.name) meta.triggerName = t.name;
+      if (t.description) meta.description = t.description;
+
+      // WEB endpoint (human-facing paywall URL)
+      services.push({
+        name: "web",
+        endpoint: t.webEndpoint,
+        ...(Object.keys(meta).length > 0 ? meta : {}),
+      });
+
+      // HTTP endpoint (machine-facing x402 URL)
+      if (t.httpEndpoint) {
+        const httpMeta: Record<string, unknown> = { ...meta };
+        if (t.inputSchema) httpMeta.inputSchema = t.inputSchema;
+        services.push({
+          name: "http",
+          endpoint: t.httpEndpoint,
+          ...(Object.keys(httpMeta).length > 0 ? httpMeta : {}),
+        });
+      }
+    }
+
+    // Add walletAddress as an endpoint (deduplicate first)
     if (wallet.address) {
+      const filtered = services.filter(
+        (s) => s.name !== "agentWallet" && s.name !== "wallet",
+      );
+      services.length = 0;
+      services.push(...filtered);
       services.push({
         name: "agentWallet",
         endpoint: `eip155:${chainId}:${wallet.address}`,
-        triggerName: undefined as unknown as string,
-        description: undefined,
       });
     }
 
-    const agentCard = {
+    // Build registrations array (populated on re-deploy)
+    const existingAgentId = wallet.erc8004AgentId;
+    const registrations: Array<Record<string, unknown>> = [];
+    if (existingAgentId) {
+      const [, tokenId] = existingAgentId.split(":");
+      if (tokenId) {
+        const contracts = getErc8004Contracts(chainId);
+        registrations.push({
+          agentId: Number.parseInt(tokenId, 10),
+          agentRegistry: `eip155:${chainId}:${contracts.IDENTITY_REGISTRY}`,
+        });
+      }
+    }
+
+    const agentCard: Record<string, unknown> = {
       type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
       name,
       description,
+      ...(image && { image }),
       services,
+      ...(registrations.length > 0 && { registrations }),
       active: true,
       x402support: true,
     };
     const agentCardJson = JSON.stringify(agentCard);
 
     // 3. Detect first deploy vs re-deploy
-    const existingAgentId = wallet.erc8004AgentId;
     const isRedeploy = !!existingAgentId;
 
     // 4. Save initial state
@@ -507,168 +576,6 @@ export class Erc8004API {
   }): Promise<PresignIpfsUrlResponse> {
     return this.client.put<PresignIpfsUrlResponse>(
       `/workspaces/${params.workflowId}/erc-8004/presign-ipfs-url`,
-    );
-  }
-
-  // ===========================================================================
-  // Web3 Wallet Management
-  // ===========================================================================
-
-  /**
-   * Get the web3 wallet associated with a workspace.
-   *
-   * @param params - Parameters
-   * @param params.workflowId - The workflow (workspace) ID
-   * @returns The web3 wallet details
-   *
-   * @example
-   * ```typescript
-   * const wallet = await client.erc8004.getWallet({ workflowId: 123 });
-   * console.log(wallet.address, wallet.deployed, wallet.erc8004AgentId);
-   * ```
-   */
-  async getWallet(params: { workflowId: number }): Promise<Web3Wallet> {
-    return this.client.get<Web3Wallet>(`/workspaces/${params.workflowId}/web3`);
-  }
-
-  /**
-   * Generate a new web3 wallet for a workspace.
-   *
-   * Creates a fresh wallet with a server-generated private key. The wallet
-   * is stored securely on the platform and used for ERC-8004 operations.
-   * A workspace can only have one web3 wallet.
-   *
-   * @param params - Parameters
-   * @param params.workflowId - The workflow (workspace) ID
-   * @returns The generated web3 wallet
-   * @throws Error if the workspace already has a web3 wallet
-   *
-   * @example
-   * ```typescript
-   * const wallet = await client.erc8004.generateWallet({ workflowId: 123 });
-   * console.log('Wallet address:', wallet.address);
-   * ```
-   */
-  async generateWallet(params: { workflowId: number }): Promise<Web3Wallet> {
-    return this.client.post<Web3Wallet>(
-      `/workspaces/${params.workflowId}/web3/generate`,
-    );
-  }
-
-  /**
-   * Import an existing web3 wallet into a workspace.
-   *
-   * Use this to associate a pre-existing wallet (e.g., one that already has
-   * an ERC-8004 registration) with a workspace.
-   * A workspace can only have one web3 wallet.
-   *
-   * @param params - Import parameters
-   * @param params.workflowId - The workflow (workspace) ID
-   * @param params.address - Wallet address
-   * @param params.network - Network name (e.g., "base")
-   * @param params.chainId - Chain ID (e.g., 8453)
-   * @param params.privateKey - Wallet private key
-   * @returns The imported web3 wallet
-   * @throws Error if the workspace already has a web3 wallet
-   *
-   * @example
-   * ```typescript
-   * const wallet = await client.erc8004.importWallet({
-   *   workflowId: 123,
-   *   address: '0x...',
-   *   network: 'base',
-   *   chainId: 8453,
-   *   privateKey: '0x...',
-   * });
-   * ```
-   */
-  async importWallet(
-    params: ImportWeb3WalletRequest & { workflowId: number },
-  ): Promise<Web3Wallet> {
-    const { workflowId, ...body } = params;
-    return this.client.post<Web3Wallet>(
-      `/workspaces/${workflowId}/web3/import`,
-      body,
-    );
-  }
-
-  /**
-   * Delete the web3 wallet associated with a workspace.
-   *
-   * This removes the wallet record from the platform. Note that the on-chain
-   * ERC-8004 registration is not affected -- this only removes the platform's
-   * association.
-   *
-   * @param params - Parameters
-   * @param params.workflowId - The workflow (workspace) ID
-   *
-   * @example
-   * ```typescript
-   * await client.erc8004.deleteWallet({ workflowId: 123 });
-   * ```
-   */
-  async deleteWallet(params: { workflowId: number }): Promise<void> {
-    await this.client.delete(`/workspaces/${params.workflowId}/web3`);
-  }
-
-  /**
-   * Sign a feedback auth message for a buyer address.
-   *
-   * This is used for the ERC-8004 reputation system. The workspace's web3 wallet
-   * signs an auth message that allows a buyer to submit feedback/reputation
-   * for the agent on-chain.
-   *
-   * @param params - Parameters
-   * @param params.workflowId - The workflow (workspace) ID
-   * @param params.buyerAddress - The buyer's wallet address to authorize
-   * @returns Object containing the signed feedback auth
-   *
-   * @example
-   * ```typescript
-   * const { signature } = await client.erc8004.signFeedbackAuth({
-   *   workflowId: 123,
-   *   buyerAddress: '0xBuyer...',
-   * });
-   * ```
-   */
-  async signFeedbackAuth(params: {
-    workflowId: number;
-    buyerAddress: string;
-  }): Promise<SignFeedbackAuthResponse> {
-    return this.client.post<SignFeedbackAuthResponse>(
-      `/workspaces/${params.workflowId}/web3/sign-feedback-auth`,
-      { buyerAddress: params.buyerAddress },
-    );
-  }
-
-  // ===========================================================================
-  // Callable Triggers
-  // ===========================================================================
-
-  /**
-   * Get callable triggers for a workspace.
-   *
-   * Returns the list of triggers that can be called externally, along with
-   * their input schemas and endpoint URLs. This is used during ERC-8004
-   * deployment to register the agent's available services on-chain.
-   *
-   * @param params - Parameters
-   * @param params.workflowId - The workflow (workspace) ID
-   * @returns Array of callable triggers with their schemas and endpoints
-   *
-   * @example
-   * ```typescript
-   * const triggers = await client.erc8004.getCallableTriggers({ workflowId: 123 });
-   * for (const trigger of triggers) {
-   *   console.log(trigger.name, trigger.webEndpoint);
-   * }
-   * ```
-   */
-  async getCallableTriggers(params: {
-    workflowId: number;
-  }): Promise<CallableTrigger[]> {
-    return this.client.get<CallableTrigger[]>(
-      `/workspaces/${params.workflowId}/callable-triggers`,
     );
   }
 }

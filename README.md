@@ -378,12 +378,12 @@ For more control over individual steps, use the lower-level methods directly:
 
 ```typescript
 // Generate a web3 wallet for the workspace
-const wallet = await client.erc8004.generateWallet({ workflowId: 123 })
+const wallet = await client.workflows.generateWallet({ id: 123 })
 console.log('Wallet address:', wallet.address)
 
 // Import an existing wallet
-const imported = await client.erc8004.importWallet({
-  workflowId: 123,
+const imported = await client.workflows.importWallet({
+  id: 123,
   address: '0x...',
   network: 'base',
   chainId: 8453,
@@ -391,11 +391,11 @@ const imported = await client.erc8004.importWallet({
 })
 
 // Get the workspace wallet
-const existing = await client.erc8004.getWallet({ workflowId: 123 })
+const existing = await client.workflows.getWallet({ id: 123 })
 console.log(existing.deployed, existing.erc8004AgentId)
 
 // Delete the workspace wallet
-await client.erc8004.deleteWallet({ workflowId: 123 })
+await client.workflows.deleteWallet({ id: 123 })
 
 // Get a presigned IPFS URL for uploading the agent card
 const { url } = await client.erc8004.presignIpfsUrl({ workflowId: 123 })
@@ -432,8 +432,8 @@ for (const trigger of callableTriggers) {
 }
 
 // Sign feedback auth for the reputation system
-const { signature } = await client.erc8004.signFeedbackAuth({
-  workflowId: 123,
+const { signature } = await client.workflows.signFeedbackAuth({
+  id: 123,
   buyerAddress: '0xBuyer...'
 })
 ```

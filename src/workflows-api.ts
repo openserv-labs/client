@@ -6,7 +6,10 @@ import type {
   EdgeDefinition,
   Edge,
   IdResponse,
+  ImportWeb3WalletRequest,
+  SignFeedbackAuthResponse,
   Task,
+  Web3Wallet,
 } from "./types";
 import type { TriggerConfig } from "./triggers-api";
 import { Workflow } from "./workflow";
@@ -573,5 +576,133 @@ export class WorkflowsAPI {
       return this.resolveEdgeRef(ref);
     }
     return `${ref.type}-${ref.id}`;
+  }
+
+  // ===========================================================================
+  // Web3 Wallet Management
+  // ===========================================================================
+
+  /**
+   * Get the web3 wallet associated with a workspace.
+   *
+   * @param params - Parameters
+   * @param params.id - The workflow (workspace) ID
+   * @returns The web3 wallet details
+   *
+   * @example
+   * ```typescript
+   * const wallet = await client.workflows.getWallet({ id: 123 });
+   * console.log(wallet.address, wallet.deployed, wallet.erc8004AgentId);
+   * ```
+   */
+  async getWallet(params: { id: number }): Promise<Web3Wallet> {
+    return this.client.get<Web3Wallet>(`/workspaces/${params.id}/web3`);
+  }
+
+  /**
+   * Generate a new web3 wallet for a workspace.
+   *
+   * Creates a fresh wallet with a server-generated private key. The wallet
+   * is stored securely on the platform and used for ERC-8004 operations.
+   * A workspace can only have one web3 wallet.
+   *
+   * @param params - Parameters
+   * @param params.id - The workflow (workspace) ID
+   * @returns The generated web3 wallet
+   * @throws Error if the workspace already has a web3 wallet
+   *
+   * @example
+   * ```typescript
+   * const wallet = await client.workflows.generateWallet({ id: 123 });
+   * console.log('Wallet address:', wallet.address);
+   * ```
+   */
+  async generateWallet(params: { id: number }): Promise<Web3Wallet> {
+    return this.client.post<Web3Wallet>(
+      `/workspaces/${params.id}/web3/generate`,
+    );
+  }
+
+  /**
+   * Import an existing web3 wallet into a workspace.
+   *
+   * Use this to associate a pre-existing wallet (e.g., one that already has
+   * an ERC-8004 registration) with a workspace.
+   * A workspace can only have one web3 wallet.
+   *
+   * @param params - Import parameters
+   * @param params.id - The workflow (workspace) ID
+   * @param params.address - Wallet address
+   * @param params.network - Network name (e.g., "base")
+   * @param params.chainId - Chain ID (e.g., 8453)
+   * @param params.privateKey - Wallet private key
+   * @returns The imported web3 wallet
+   * @throws Error if the workspace already has a web3 wallet
+   *
+   * @example
+   * ```typescript
+   * const wallet = await client.workflows.importWallet({
+   *   id: 123,
+   *   address: '0x...',
+   *   network: 'base',
+   *   chainId: 8453,
+   *   privateKey: '0x...',
+   * });
+   * ```
+   */
+  async importWallet(
+    params: ImportWeb3WalletRequest & { id: number },
+  ): Promise<Web3Wallet> {
+    const { id, ...body } = params;
+    return this.client.post<Web3Wallet>(`/workspaces/${id}/web3/import`, body);
+  }
+
+  /**
+   * Delete the web3 wallet associated with a workspace.
+   *
+   * This removes the wallet record from the platform. Note that the on-chain
+   * ERC-8004 registration is not affected -- this only removes the platform's
+   * association.
+   *
+   * @param params - Parameters
+   * @param params.id - The workflow (workspace) ID
+   *
+   * @example
+   * ```typescript
+   * await client.workflows.deleteWallet({ id: 123 });
+   * ```
+   */
+  async deleteWallet(params: { id: number }): Promise<void> {
+    await this.client.delete(`/workspaces/${params.id}/web3`);
+  }
+
+  /**
+   * Sign a feedback auth message for a buyer address.
+   *
+   * This is used for the ERC-8004 reputation system. The workspace's web3 wallet
+   * signs an auth message that allows a buyer to submit feedback/reputation
+   * for the agent on-chain.
+   *
+   * @param params - Parameters
+   * @param params.id - The workflow (workspace) ID
+   * @param params.buyerAddress - The buyer's wallet address to authorize
+   * @returns Object containing the signed feedback auth
+   *
+   * @example
+   * ```typescript
+   * const { signature } = await client.workflows.signFeedbackAuth({
+   *   id: 123,
+   *   buyerAddress: '0xBuyer...',
+   * });
+   * ```
+   */
+  async signFeedbackAuth(params: {
+    id: number;
+    buyerAddress: string;
+  }): Promise<SignFeedbackAuthResponse> {
+    return this.client.post<SignFeedbackAuthResponse>(
+      `/workspaces/${params.id}/web3/sign-feedback-auth`,
+      { buyerAddress: params.buyerAddress },
+    );
   }
 }

@@ -1,5 +1,5 @@
 import type { PlatformClient } from "./client";
-import type { Trigger } from "./types";
+import type { CallableTrigger, Trigger } from "./types";
 
 // ============================================================================
 // Trigger Config Types (user-facing)
@@ -518,6 +518,33 @@ export class TriggersAPI {
       {
         input: params.input || "",
       },
+    );
+  }
+
+  /**
+   * Get callable triggers for a workspace.
+   *
+   * Returns the list of triggers that can be called externally, along with
+   * their input schemas and endpoint URLs. This is used during ERC-8004
+   * deployment to register the agent's available services on-chain.
+   *
+   * @param params - Parameters
+   * @param params.workflowId - The workflow (workspace) ID
+   * @returns Array of callable triggers with their schemas and endpoints
+   *
+   * @example
+   * ```typescript
+   * const triggers = await client.triggers.getCallableTriggers({ workflowId: 123 });
+   * for (const trigger of triggers) {
+   *   console.log(trigger.name, trigger.webEndpoint);
+   * }
+   * ```
+   */
+  async getCallableTriggers(params: {
+    workflowId: number;
+  }): Promise<CallableTrigger[]> {
+    return this.client.get<CallableTrigger[]>(
+      `/workspaces/${params.workflowId}/callable-triggers`,
     );
   }
 }

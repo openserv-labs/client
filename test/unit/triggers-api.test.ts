@@ -269,4 +269,50 @@ describe("TriggersAPI", () => {
       assert.strictEqual(putCall[1].input, "");
     });
   });
+
+  describe("getCallableTriggers", () => {
+    it("should return callable triggers for a workspace", async () => {
+      const triggers = [
+        {
+          name: "AI Research",
+          description: "Research any topic",
+          inputSchema: { prompt: { type: "string" } },
+          jsonSchema: { type: "object" },
+          webEndpoint: "https://api.openserv.ai/webhooks/x402/trigger/abc",
+          httpEndpoint: "https://api.openserv.ai/webhooks/trigger/abc",
+        },
+        {
+          name: "Image Generator",
+          description: null,
+          inputSchema: {},
+          jsonSchema: null,
+          webEndpoint: "https://api.openserv.ai/webhooks/x402/trigger/def",
+          httpEndpoint: null,
+        },
+      ];
+
+      mockClient.get.mock.mockImplementation(() => Promise.resolve(triggers));
+
+      const result = await triggersApi.getCallableTriggers({
+        workflowId: 123,
+      });
+
+      assert.strictEqual(result.length, 2);
+      assert.strictEqual(result[0].name, "AI Research");
+      assert.strictEqual(result[1].description, null);
+      assert.deepStrictEqual(mockClient.get.mock.calls[0].arguments, [
+        "/workspaces/123/callable-triggers",
+      ]);
+    });
+
+    it("should return empty array when no callable triggers", async () => {
+      mockClient.get.mock.mockImplementation(() => Promise.resolve([]));
+
+      const result = await triggersApi.getCallableTriggers({
+        workflowId: 456,
+      });
+
+      assert.deepStrictEqual(result, []);
+    });
+  });
 });
