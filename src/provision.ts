@@ -570,7 +570,7 @@ async function provisionWorkflow(
     // syncInternal() handles x402 wallet injection, integration connection resolution,
     // and auto-generates sequential edges when none are provided
     const workflow = await client.workflows.create({
-      name: `${workflowName} Workflow`,
+      name: workflowName,
       goal: config.goal,
       agentIds: config.agentIds,
       triggers: [config.trigger],
