@@ -2,6 +2,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig } from "axios";
 import { ethers } from "ethers";
 import { AgentsAPI } from "./agents-api";
 import { IntegrationsAPI } from "./integrations-api";
+import { ModelsAPI } from "./models-api";
 import { TriggersAPI } from "./triggers-api";
 import { TasksAPI } from "./tasks-api";
 import { WorkflowsAPI } from "./workflows-api";
@@ -38,6 +39,8 @@ export class PlatformClient {
   readonly agents: AgentsAPI;
   /** API for managing integration connections */
   readonly integrations: IntegrationsAPI;
+  /** API for discovering available LLM models */
+  readonly models: ModelsAPI;
   /** API for managing workflow triggers */
   readonly triggers: TriggersAPI;
   /** API for managing workflow tasks */
@@ -134,6 +137,7 @@ export class PlatformClient {
 
     this.agents = new AgentsAPI(this);
     this.integrations = new IntegrationsAPI(this);
+    this.models = new ModelsAPI(this);
     this.triggers = new TriggersAPI(this);
     this.tasks = new TasksAPI(this);
     this.workflows = new WorkflowsAPI(this);

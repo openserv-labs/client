@@ -13,6 +13,7 @@ export interface Agent {
   is_listed_on_marketplace: boolean;
   is_trading_agent: boolean;
   scopes: Record<string, unknown> | string[];
+  model_parameters?: Record<string, unknown>;
 }
 
 export interface Category {

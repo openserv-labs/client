@@ -55,6 +55,12 @@ export { PlatformClient } from "./client";
 export { Workflow } from "./workflow";
 export { AgentsAPI } from "./agents-api";
 export { IntegrationsAPI } from "./integrations-api";
+export { ModelsAPI } from "./models-api";
+export type {
+  ModelParameterMeta,
+  ModelInfo,
+  ModelsResponse,
+} from "./models-api";
 export { TriggersAPI } from "./triggers-api";
 export { TasksAPI } from "./tasks-api";
 export { WorkflowsAPI } from "./workflows-api";
