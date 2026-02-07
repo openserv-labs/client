@@ -409,9 +409,10 @@ async function provisionAgent(
       // Fetch current agent from API to get the latest endpoint_url
       const currentAgent = await client.agents.get({ id: agentId });
 
-      // Use config endpoint if provided, otherwise preserve current endpoint, or use default
+      // Use config endpoint if provided, then env var, otherwise preserve current endpoint, or use default
       const endpointUrl =
         config.endpointUrl ||
+        process.env.AGENT_ENDPOINT_URL ||
         currentAgent.endpoint_url ||
         DEFAULT_AGENT_ENDPOINT;
 
@@ -453,7 +454,10 @@ async function provisionAgent(
   }
 
   // Register new agent (only reached if no existing agent, or existing was deleted)
-  const endpointUrl = config.endpointUrl || DEFAULT_AGENT_ENDPOINT;
+  const endpointUrl =
+    config.endpointUrl ||
+    process.env.AGENT_ENDPOINT_URL ||
+    DEFAULT_AGENT_ENDPOINT;
   const agent = await client.agents.create({
     name: config.name,
     capabilities_description: config.description,
