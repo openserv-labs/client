@@ -111,12 +111,14 @@ export class AgentsAPI {
    * @param params.name - Unique name for the agent
    * @param params.capabilities_description - Description of what the agent can do
    * @param params.endpoint_url - URL where the agent is hosted
+   * @param params.model_parameters - Optional model parameters (e.g. { model: "gpt-5-mini", verbosity: "medium", reasoning_effort: "low" })
    * @returns The created agent
    */
   async create(params: {
     name: string;
     capabilities_description: string;
     endpoint_url: string;
+    model_parameters?: Record<string, unknown>;
   }): Promise<Agent> {
     const data = await this.client.post<IdResponse>("/agents", {
       name: params.name,
@@ -124,6 +126,9 @@ export class AgentsAPI {
       endpoint_url: params.endpoint_url,
       kind: "external",
       is_built_by_agent_builder: false,
+      ...(params.model_parameters && {
+        model_parameters: params.model_parameters,
+      }),
     });
     return this.get({ id: data.id });
   }
