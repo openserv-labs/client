@@ -550,6 +550,16 @@ async function provisionWorkflow(
         ...(config.edges && { edges: config.edges }),
       });
       logger.info(`Updated workflow ${workflowName} (${workflowId})`);
+
+      // Always re-activate all triggers and set workflow to running.
+      // A health check or other process may have disabled them.
+      const allTriggers = await client.triggers.list({ workflowId });
+      for (const t of allTriggers) {
+        if (t.id) {
+          await client.triggers.activate({ workflowId, id: t.id });
+        }
+      }
+      await client.workflows.setRunning({ id: workflowId });
     } catch (error: unknown) {
       // Only create a new workflow if the existing one was deleted from the platform (404)
       // For any other error, propagate it to avoid creating duplicates
