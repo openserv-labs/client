@@ -391,6 +391,21 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 /**
+ * Check if an error is an "already in desired state" error (400).
+ * The platform returns this when activating an already-active trigger
+ * or setting a workflow to running when it's already running.
+ */
+function isAlreadyInStateError(error: unknown): boolean {
+  const axiosError = error as {
+    response?: { status: number; data?: { message?: string } };
+  };
+  return (
+    axiosError.response?.status === 400 &&
+    !!axiosError.response?.data?.message?.toLowerCase().includes("already")
+  );
+}
+
+/**
  * Register or update an agent on the platform.
  * This function is idempotent - calling it multiple times with the same config
  * will update the existing agent rather than create duplicates.
@@ -553,13 +568,22 @@ async function provisionWorkflow(
 
       // Always re-activate all triggers and set workflow to running.
       // A health check or other process may have disabled them.
+      // These calls may 400 if already in the desired state — that's fine.
       const allTriggers = await client.triggers.list({ workflowId });
       for (const t of allTriggers) {
         if (t.id) {
-          await client.triggers.activate({ workflowId, id: t.id });
+          try {
+            await client.triggers.activate({ workflowId, id: t.id });
+          } catch (e: unknown) {
+            if (!isAlreadyInStateError(e)) throw e;
+          }
         }
       }
-      await client.workflows.setRunning({ id: workflowId });
+      try {
+        await client.workflows.setRunning({ id: workflowId });
+      } catch (e: unknown) {
+        if (!isAlreadyInStateError(e)) throw e;
+      }
     } catch (error: unknown) {
       // Only create a new workflow if the existing one was deleted from the platform (404)
       // For any other error, propagate it to avoid creating duplicates
@@ -606,11 +630,19 @@ async function provisionWorkflow(
 
     // Activate trigger
     if (triggerId) {
-      await client.triggers.activate({ workflowId, id: triggerId });
+      try {
+        await client.triggers.activate({ workflowId, id: triggerId });
+      } catch (e: unknown) {
+        if (!isAlreadyInStateError(e)) throw e;
+      }
     }
 
     // Set workspace to running
-    await client.workflows.setRunning({ id: workflowId });
+    try {
+      await client.workflows.setRunning({ id: workflowId });
+    } catch (e: unknown) {
+      if (!isAlreadyInStateError(e)) throw e;
+    }
 
     // Re-read state to avoid overwriting concurrent changes
     const freshState = readState();
