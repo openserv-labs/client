@@ -74,6 +74,18 @@ export interface ProvisionConfig {
      * Only provide this if your agent runs with a different publicly accessible URL.
      */
     endpointUrl?: string;
+    /**
+     * Optional model parameters for the agent.
+     * Controls which LLM model the runtime uses when executing tasks.
+     * If not provided, the platform default (gpt-5-mini) is used.
+     *
+     * @example
+     * ```typescript
+     * model_parameters: { model: "gpt-5", verbosity: "medium", reasoning_effort: "high" }
+     * model_parameters: { model: "gpt-4o", temperature: 0.5, parallel_tool_calls: false }
+     * ```
+     */
+    model_parameters?: Record<string, unknown>;
   };
   /** Workflow configuration */
   workflow: {
@@ -477,6 +489,9 @@ async function provisionAgent(
     name: config.name,
     capabilities_description: config.description,
     endpoint_url: endpointUrl,
+    ...(config.model_parameters && {
+      model_parameters: config.model_parameters,
+    }),
   });
 
   const agentId = agent.id;
