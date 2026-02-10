@@ -154,6 +154,7 @@ export class AgentsAPI {
    * @param params.endpoint_url - New endpoint URL (optional)
    * @param params.name - New name (optional)
    * @param params.capabilities_description - New description (optional)
+   * @param params.model_parameters - New model parameters (optional, e.g. { model: "gpt-4.1", temperature: 0 })
    * @returns The updated agent
    */
   async update(params: {
@@ -161,8 +162,15 @@ export class AgentsAPI {
     endpoint_url?: string;
     name?: string;
     capabilities_description?: string;
+    model_parameters?: Record<string, unknown>;
   }): Promise<Agent> {
-    const { id, endpoint_url, name, capabilities_description } = params;
+    const {
+      id,
+      endpoint_url,
+      name,
+      capabilities_description,
+      model_parameters,
+    } = params;
 
     // First get the current agent to preserve ALL required fields
     const currentAgent = await this.get({ id });
@@ -186,6 +194,7 @@ export class AgentsAPI {
       is_listed_on_marketplace: currentAgent.is_listed_on_marketplace ?? false,
       is_trading_agent: currentAgent.is_trading_agent ?? false,
       scopes,
+      model_parameters: model_parameters ?? currentAgent.model_parameters,
     };
 
     // endpoint_url is required for external agents.
