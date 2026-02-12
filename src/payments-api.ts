@@ -1,7 +1,7 @@
 import { privateKeyToAccount } from "viem/accounts";
-import { wrapFetchWithPayment, createSigner } from "x402-fetch";
 import type { PlatformClient } from "./client";
 import type { X402PaymentRequest, X402PaymentResult } from "./types";
+import { wrapFetchWithPayment, createSigner } from "./x402";
 
 /**
  * API for making x402 payments to access paid workflows.
@@ -89,8 +89,9 @@ export class PaymentsAPI {
     // Create account from private key (for getting address)
     const account = privateKeyToAccount(privateKey as `0x${string}`);
 
-    // Create signer for x402 payments on Base network
-    const signer = await createSigner("base", privateKey);
+    // Create signer for x402 payments (defaults to Base mainnet)
+    const network = params.network ?? "base";
+    const signer = createSigner(network, privateKey);
 
     // Wrap fetch with x402 payment handling
     const x402Fetch = wrapFetchWithPayment(fetch, signer);
@@ -119,8 +120,8 @@ export class PaymentsAPI {
       txHash: "", // x402 handles this internally, tx hash not exposed
       price: "", // Price is handled by x402 protocol
       response: responseData,
-      network: "base",
-      chainId: 8453,
+      network,
+      chainId: signer.chain?.id ?? 8453,
     };
   }
 
@@ -242,8 +243,10 @@ export class PaymentsAPI {
     erc8004AgentId: string | null;
   }> {
     // This endpoint is public and doesn't require authentication
+    const baseUrl =
+      this.client.rawClient.defaults.baseURL || "https://api.openserv.ai";
     const response = await fetch(
-      `https://api.openserv.ai/webhooks/trigger/${params.token}`,
+      `${baseUrl}/webhooks/trigger/${params.token}`,
     );
 
     if (!response.ok) {

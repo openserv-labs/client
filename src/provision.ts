@@ -1,6 +1,7 @@
-import { ethers } from "ethers";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { normalizePrivateKey } from "./utils";
 import { PlatformClient } from "./client";
 import type { TriggerConfig } from "./triggers-api";
 import type { EdgeDefinition } from "./types";
@@ -326,14 +327,14 @@ async function getOrCreateWallet(): Promise<{
   const { privateKey } = getWalletFromEnv();
 
   if (privateKey) {
-    const wallet = new ethers.Wallet(privateKey);
-    return { privateKey, address: wallet.address };
+    const account = privateKeyToAccount(normalizePrivateKey(privateKey));
+    return { privateKey, address: account.address };
   }
 
   // Create new wallet
-  const wallet = ethers.Wallet.createRandom();
-  const newPrivateKey = wallet.privateKey;
-  const newAddress = wallet.address;
+  const newPrivateKey = generatePrivateKey();
+  const account = privateKeyToAccount(newPrivateKey);
+  const newAddress = account.address;
 
   // Persist to .env (secrets stay in .env)
   writeWalletToEnv(newPrivateKey);
@@ -350,8 +351,9 @@ async function createAuthenticatedClient(privateKey: string): Promise<{
   client: PlatformClient;
   walletAddress: string;
 }> {
-  const wallet = new ethers.Wallet(privateKey);
-  const walletAddress = wallet.address;
+  const walletAddress = privateKeyToAccount(
+    normalizePrivateKey(privateKey),
+  ).address;
 
   // Check if we have a saved user API key (for session continuity)
   const state = readState();

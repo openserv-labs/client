@@ -367,6 +367,8 @@ export interface X402PaymentRequest {
   privateKey?: string;
   /** Input data to pass to the workflow */
   input?: Record<string, unknown>;
+  /** Network to use for payment (default: "base"). Use "base-sepolia" for testnet. */
+  network?: string;
 }
 
 /**

@@ -18,6 +18,7 @@ import type {
 } from "./types";
 import { IDENTITY_REGISTRY_ABI } from "./erc8004-abi.js";
 import { getErc8004Chain, getErc8004Contracts } from "./erc8004-contracts.js";
+import { normalizePrivateKey } from "./utils";
 
 /**
  * API for ERC-8004 agent identity operations on the OpenServ platform.
@@ -379,10 +380,7 @@ export class Erc8004API {
           },
         });
 
-    const normalizedKey = (
-      privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`
-    ) as Hex;
-    const account = privateKeyToAccount(normalizedKey);
+    const account = privateKeyToAccount(normalizePrivateKey(privateKey));
     const publicClient = createPublicClient({
       chain: viemChain,
       transport: http(rpcUrl),

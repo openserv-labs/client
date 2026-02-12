@@ -1,5 +1,15 @@
-import { ethers } from "ethers";
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  http,
+  parseUnits,
+  formatUnits,
+  type Address,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import type { PlatformClient } from "./client";
+import { normalizePrivateKey } from "./utils";
 import type {
   UsdcTopupConfig,
   UsdcTopupResult,
@@ -7,11 +17,26 @@ import type {
   UsdcVerifyResponse,
 } from "./types";
 
-// ERC20 Transfer ABI (minimal)
+// ERC20 ABI (minimal, for balance check and transfer)
 const ERC20_ABI = [
-  "function transfer(address to, uint256 amount) returns (bool)",
-  "function balanceOf(address owner) view returns (uint256)",
-];
+  {
+    name: "transfer",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
 
 // Known RPC URLs for supported chains
 const CHAIN_RPC_URLS: Record<number, string> = {
@@ -168,56 +193,73 @@ export class Web3API {
       CHAIN_RPC_URLS[config.chainId] ||
       `https://rpc.ankr.com/${config.network}`;
 
-    // Step 2: Create wallet and connect to the chain
-    const provider = new ethers.JsonRpcProvider(rpcUrl);
-    const wallet = new ethers.Wallet(privateKey, provider);
+    // Step 2: Create viem clients
+    const account = privateKeyToAccount(normalizePrivateKey(privateKey));
+
+    const chain = defineChain({
+      id: config.chainId,
+      name: config.network,
+      nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+      rpcUrls: { default: { http: [rpcUrl] } },
+    });
+
+    const publicClient = createPublicClient({
+      chain,
+      transport: http(rpcUrl),
+    });
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(rpcUrl),
+    });
 
     // Step 3: Check USDC balance
-    const usdcContract = new ethers.Contract(
-      config.usdcContractAddress,
-      ERC20_ABI,
-      wallet,
-    );
-
     // USDC has 6 decimals
-    const amountInSmallestUnit = ethers.parseUnits(
+    const amountInSmallestUnit = parseUnits(
       params.amountUsd.toString(),
       6,
     );
-    const balance: bigint = await usdcContract.getFunction("balanceOf")(
-      wallet.address,
-    );
+    const balance = await publicClient.readContract({
+      address: config.usdcContractAddress as Address,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [account.address],
+    });
 
     if (balance < amountInSmallestUnit) {
-      const balanceFormatted = ethers.formatUnits(balance, 6);
+      const balanceFormatted = formatUnits(balance, 6);
       throw new Error(
         `Insufficient USDC balance. Have: ${balanceFormatted} USDC, need: ${params.amountUsd} USDC`,
       );
     }
 
     // Step 4: Send USDC transfer
-    const tx = await usdcContract.getFunction("transfer")(
-      config.receiverAddress,
-      amountInSmallestUnit,
-    );
+    const txHash = await walletClient.writeContract({
+      address: config.usdcContractAddress as Address,
+      abi: ERC20_ABI,
+      functionName: "transfer",
+      args: [config.receiverAddress as Address, amountInSmallestUnit],
+    });
 
     // Step 5: Wait for confirmation
-    const receipt = await tx.wait();
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: txHash,
+    });
 
-    if (!receipt || receipt.status !== 1) {
+    if (receipt.status !== "success") {
       throw new Error("Transaction failed or was reverted");
     }
 
-    const txHash = receipt.hash as `0x${string}`;
-
     // Step 6: Sign verification message
     const verificationMessage = `Verify USDC top-up: ${txHash}`;
-    const signature = await wallet.signMessage(verificationMessage);
+    const signature = await account.signMessage({
+      message: verificationMessage,
+    });
 
     // Step 7: Verify transaction and add credits
     const verifyResult = await this.verifyUsdcTransaction({
       txHash,
-      payerAddress: wallet.address,
+      payerAddress: account.address,
       signature,
     });
 

@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig } from "axios";
-import { ethers } from "ethers";
+import { privateKeyToAccount } from "viem/accounts";
+import { normalizePrivateKey } from "./utils";
 import { AgentsAPI } from "./agents-api";
 import { IntegrationsAPI } from "./integrations-api";
 import { ModelsAPI } from "./models-api";
@@ -172,9 +173,9 @@ export class PlatformClient {
       return "";
     }
 
-    // Create wallet and store address for x402 wallet resolution
-    const wallet = new ethers.Wallet(walletKey);
-    const walletAddress = wallet.address;
+    // Create account and store address for x402 wallet resolution
+    const account = privateKeyToAccount(normalizePrivateKey(walletKey));
+    const walletAddress = account.address;
     this.walletAddress = walletAddress;
 
     // Step 1: Get nonce from platform
@@ -211,7 +212,7 @@ Nonce: ${nonce}
 Issued At: ${issuedAt}`;
 
     // Step 2: Sign the message
-    const signature = await wallet.signMessage(message);
+    const signature = await account.signMessage({ message });
 
     // Step 3: Verify signature and get API key
     const verifyResponse = await this._apiClient.post<VerifyResponse>(
@@ -243,7 +244,9 @@ Issued At: ${issuedAt}`;
   resolveWalletAddress(): string | undefined {
     if (this.walletAddress) return this.walletAddress;
     if (process.env.WALLET_PRIVATE_KEY) {
-      return new ethers.Wallet(process.env.WALLET_PRIVATE_KEY).address;
+      return privateKeyToAccount(
+        normalizePrivateKey(process.env.WALLET_PRIVATE_KEY),
+      ).address;
     }
     return undefined;
   }
