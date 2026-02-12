@@ -260,25 +260,10 @@ export class Erc8004API {
       this.client.rawClient.defaults.baseURL || "https://api.openserv.ai";
     const services: Array<Record<string, unknown>> = [];
 
-    // MCP endpoint (machine-facing, aggregates all x402 triggers)
-    const mcpEndpoint = `${baseUrl}/workspaces/${workflowId}/trigger-x402-mcp/mcp`;
-    services.push({
-      name: "MCP",
-      endpoint: mcpEndpoint,
-      version: "2025-06-18",
-    });
-
     for (const t of callableTriggers) {
       const meta: Record<string, unknown> = {};
       if (t.name) meta.triggerName = t.name;
       if (t.description) meta.description = t.description;
-
-      // WEB endpoint (human-facing paywall URL)
-      services.push({
-        name: "web",
-        endpoint: t.webEndpoint,
-        ...(Object.keys(meta).length > 0 ? meta : {}),
-      });
 
       // HTTP endpoint (machine-facing x402 URL)
       if (t.httpEndpoint) {
@@ -290,7 +275,22 @@ export class Erc8004API {
           ...(Object.keys(httpMeta).length > 0 ? httpMeta : {}),
         });
       }
+
+      // WEB endpoint (human-facing paywall URL)
+      services.push({
+        name: "web",
+        endpoint: t.webEndpoint,
+        ...(Object.keys(meta).length > 0 ? meta : {}),
+      });
     }
+
+    // MCP endpoint (machine-facing, aggregates all x402 triggers)
+    const mcpEndpoint = `${baseUrl}/workspaces/${workflowId}/x402/mcp`;
+    services.push({
+      name: "MCP",
+      endpoint: mcpEndpoint,
+      version: "2025-06-18",
+    });
 
     // Add walletAddress as an endpoint (deduplicate first)
     if (wallet.address) {
