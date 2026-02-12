@@ -215,10 +215,7 @@ export class Web3API {
 
     // Step 3: Check USDC balance
     // USDC has 6 decimals
-    const amountInSmallestUnit = parseUnits(
-      params.amountUsd.toString(),
-      6,
-    );
+    const amountInSmallestUnit = parseUnits(params.amountUsd.toString(), 6);
     const balance = await publicClient.readContract({
       address: config.usdcContractAddress as Address,
       abi: ERC20_ABI,

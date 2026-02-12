@@ -245,9 +245,7 @@ export class PaymentsAPI {
     // This endpoint is public and doesn't require authentication
     const baseUrl =
       this.client.rawClient.defaults.baseURL || "https://api.openserv.ai";
-    const response = await fetch(
-      `${baseUrl}/webhooks/trigger/${params.token}`,
-    );
+    const response = await fetch(`${baseUrl}/webhooks/trigger/${params.token}`);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
