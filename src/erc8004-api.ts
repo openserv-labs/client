@@ -261,7 +261,7 @@ export class Erc8004API {
     const services: Array<Record<string, unknown>> = [];
 
     // MCP endpoint (machine-facing, aggregates all x402 triggers)
-    const mcpEndpoint = `${baseUrl}/workspaces/${workflowId}/trigger-x402-mcp/mcp`;
+    const mcpEndpoint = `${baseUrl}/workspaces/${workflowId}/x402/mcp`;
     services.push({
       name: "MCP",
       endpoint: mcpEndpoint,
