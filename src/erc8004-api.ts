@@ -268,7 +268,23 @@ export class Erc8004API {
       // HTTP endpoint (machine-facing x402 URL)
       if (t.httpEndpoint) {
         const httpMeta: Record<string, unknown> = { ...meta };
-        if (t.inputSchema) httpMeta.inputSchema = t.inputSchema;
+
+        // Build the full request schema including the x402 envelope
+        // (buyerAddress + payload wrapping the trigger's own input schema)
+        const requestSchema: Record<string, unknown> = {
+          type: "object",
+          required: ["buyerAddress", "payload"],
+          properties: {
+            buyerAddress: {
+              type: "string",
+              description:
+                "The buyer's wallet address (e.g. 0x...) for x402 payment",
+            },
+            payload: t.inputSchema ?? { type: "object" },
+          },
+        };
+        httpMeta.inputSchema = requestSchema;
+
         services.push({
           name: "http",
           endpoint: t.httpEndpoint,
