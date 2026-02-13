@@ -141,7 +141,7 @@ export interface ProvisionResult {
   triggerToken: string;
   /** Paywall URL for x402 triggers */
   paywallUrl?: string;
-  /** API endpoint URL for webhook triggers */
+  /** API endpoint URL for webhook and x402 triggers */
   apiEndpoint?: string;
 }
 
@@ -696,7 +696,9 @@ async function provisionWorkflow(
   const apiEndpoint =
     config.trigger.type === "webhook"
       ? `https://api.openserv.ai/workspaces/${workflowId}/triggers/${triggerId}/fire`
-      : undefined;
+      : config.trigger.type === "x402"
+        ? `https://api.openserv.ai/webhooks/x402/trigger/${triggerToken}`
+        : undefined;
 
   return {
     workflowId,
