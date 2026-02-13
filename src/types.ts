@@ -290,6 +290,8 @@ export interface Web3Wallet {
   network: string | null;
   /** Chain ID (e.g., 8453 for Base mainnet) */
   chainId: number | null;
+  /** Transaction hash of the latest on-chain deployment, null if not yet deployed */
+  latestDeploymentTransactionHash: string | null;
   /** When the wallet record was created */
   createdAt: string;
   /** When the wallet record was last updated */

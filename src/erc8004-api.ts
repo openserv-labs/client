@@ -348,24 +348,9 @@ export class Erc8004API {
     const agentCardJson = JSON.stringify(agentCard);
 
     // 3. Detect first deploy vs re-deploy
-    const isRedeploy = !!existingAgentId;
+    const isRedeploy = !!wallet.latestDeploymentTransactionHash;
 
-    // 4. Save initial state
-    await this.deploy({
-      workflowId,
-      erc8004AgentId: existingAgentId ?? "",
-      stringifiedAgentCard: agentCardJson,
-      ...(wallet.address ? { walletAddress: wallet.address } : {}),
-      network: "base",
-      chainId,
-      rpcUrl,
-    });
-
-    // 5. Upload to IPFS
-    const { url: presignedUrl } = await this.presignIpfsUrl({ workflowId });
-    const ipfsCid = await this.uploadToIpfs(agentCardJson, presignedUrl);
-
-    // 6. On-chain registration
+    // 4. On-chain setup
     const contracts = getErc8004Contracts(chainId);
     const chainConfig = getErc8004Chain(chainId);
     const registryAddress = contracts.IDENTITY_REGISTRY as Address;
@@ -401,6 +386,74 @@ export class Erc8004API {
       chain: viemChain,
       transport: http(rpcUrl),
     });
+
+    // 5. For re-deploys, check if the agent card has actually changed
+    if (isRedeploy) {
+      if (!existingAgentId) {
+        throw new Error(
+          "Wallet has a deployment transaction hash but no agentId — data is inconsistent",
+        );
+      }
+      const tokenId = existingAgentId.split(":")[1];
+      if (!tokenId) {
+        throw new Error(`Invalid existing agentId format: ${existingAgentId}`);
+      }
+
+      // Read the current agentURI from the on-chain contract
+      const currentUri = await publicClient.readContract({
+        address: registryAddress,
+        abi: IDENTITY_REGISTRY_ABI,
+        functionName: "tokenURI",
+        args: [BigInt(tokenId)],
+      });
+
+      // Fetch the existing agent card from IPFS and compare
+      if (typeof currentUri === "string" && currentUri.startsWith("ipfs://")) {
+        const existingCid = currentUri.replace("ipfs://", "");
+        try {
+          const gatewayUrl = `https://gateway.pinata.cloud/ipfs/${existingCid}`;
+          const ipfsResponse = await fetch(gatewayUrl);
+          if (ipfsResponse.ok) {
+            const existingCard = await ipfsResponse.json();
+            const existingCardJson = JSON.stringify(existingCard);
+
+            if (existingCardJson === agentCardJson) {
+              // Agent card is unchanged — skip IPFS upload and on-chain write
+              const network = chainConfig?.network ?? "base";
+              const scanUrl = `https://www.8004scan.io/agents/${network}/${tokenId}`;
+
+              return {
+                agentId: existingAgentId,
+                ipfsCid: existingCid,
+                txHash: "",
+                agentCardUrl: gatewayUrl,
+                blockExplorerUrl: "",
+                scanUrl,
+              };
+            }
+          }
+        } catch {
+          // If fetching from IPFS fails, proceed with re-deploy
+        }
+      }
+    }
+
+    // 6. Save initial state
+    await this.deploy({
+      workflowId,
+      erc8004AgentId: existingAgentId ?? "",
+      stringifiedAgentCard: agentCardJson,
+      ...(wallet.address ? { walletAddress: wallet.address } : {}),
+      network: "base",
+      chainId,
+      rpcUrl,
+    });
+
+    // 7. Upload to IPFS
+    const { url: presignedUrl } = await this.presignIpfsUrl({ workflowId });
+    const ipfsCid = await this.uploadToIpfs(agentCardJson, presignedUrl);
+
+    // 8. On-chain registration
     const walletClient = createWalletClient({
       account,
       chain: viemChain,
@@ -411,6 +464,12 @@ export class Erc8004API {
     let txHash: string;
 
     if (isRedeploy) {
+      if (!existingAgentId) {
+        throw new Error(
+          "Wallet has a deployment transaction hash but no agentId — data is inconsistent",
+        );
+      }
+
       // Re-deploy: just update the URI
       const tokenId = existingAgentId.split(":")[1];
       if (!tokenId) {
@@ -428,12 +487,12 @@ export class Erc8004API {
       txHash = hash;
       agentId = existingAgentId;
     } else {
-      // First deploy: register then set URI
+      // First deploy: register with URI in a single transaction
       const registerHash = await walletClient.writeContract({
         address: registryAddress,
         abi: IDENTITY_REGISTRY_ABI,
         functionName: "register",
-        args: [],
+        args: [`ipfs://${ipfsCid}`],
       });
 
       const registerReceipt = await publicClient.waitForTransactionReceipt({
@@ -446,20 +505,10 @@ export class Erc8004API {
         registryAddress,
       );
       agentId = `${chainId}:${tokenId}`;
-
-      // Set the IPFS URI
-      const uriHash = await walletClient.writeContract({
-        address: registryAddress,
-        abi: IDENTITY_REGISTRY_ABI,
-        functionName: "setAgentURI",
-        args: [BigInt(tokenId), `ipfs://${ipfsCid}`],
-      });
-
-      await publicClient.waitForTransactionReceipt({ hash: uriHash });
-      txHash = uriHash;
+      txHash = registerHash;
     }
 
-    // 7. Save final state
+    // 9. Save final state
     await this.deploy({
       workflowId,
       erc8004AgentId: agentId,

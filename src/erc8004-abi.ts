@@ -3,6 +3,7 @@
  *
  * Contains only the functions needed for agent registration:
  * - register() — mint a new agent NFT
+ * - register(string agentURI) — mint and set URI in one transaction
  * - setAgentURI() — set/update the IPFS URI for an agent
  * - tokenURI() — read the current URI (for verification)
  * - Registered event — extract agentId from registration receipt
@@ -15,6 +16,14 @@ export const IDENTITY_REGISTRY_ABI = [
   // register() — no-args overload, mints a new agent ID
   {
     inputs: [],
+    name: "register",
+    outputs: [{ internalType: "uint256", name: "agentId", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // register(string agentURI) — mints and sets URI in one transaction
+  {
+    inputs: [{ internalType: "string", name: "agentURI", type: "string" }],
     name: "register",
     outputs: [{ internalType: "uint256", name: "agentId", type: "uint256" }],
     stateMutability: "nonpayable",
