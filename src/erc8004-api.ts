@@ -357,7 +357,9 @@ export class Erc8004API {
 
     // 3. Detect first deploy vs re-deploy
     const isRedeploy =
-      !!wallet.latestDeploymentTransactionHash || !!wallet.erc8004AgentId;
+      wallet.deployed ||
+      !!wallet.latestDeploymentTransactionHash ||
+      !!wallet.erc8004AgentId;
 
     // 4. On-chain setup
     const contracts = getErc8004Contracts(chainId);
