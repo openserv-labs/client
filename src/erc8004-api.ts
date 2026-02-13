@@ -272,6 +272,7 @@ export class Erc8004API {
         // Build the full request schema including the x402 envelope
         // (buyerAddress + payload wrapping the trigger's own input schema)
         const requestSchema: Record<string, unknown> = {
+          $schema: "http://json-schema.org/draft-07/schema#",
           type: "object",
           required: ["buyerAddress", "payload"],
           properties: {
@@ -280,10 +281,17 @@ export class Erc8004API {
               description:
                 "The buyer's wallet address (e.g. 0x...) for x402 payment",
             },
-            payload: t.inputSchema ?? { type: "object" },
+            payload: t.inputSchema
+              ? Object.fromEntries(
+                  Object.entries(
+                    t.inputSchema as Record<string, unknown>,
+                  ).filter(([key]) => key !== "$schema"),
+                )
+              : { type: "object" },
           },
         };
-        httpMeta.inputSchema = requestSchema;
+        httpMeta.schema = requestSchema;
+        httpMeta.method = "POST";
 
         services.push({
           name: "http",
