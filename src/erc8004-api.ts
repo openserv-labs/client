@@ -348,7 +348,8 @@ export class Erc8004API {
     const agentCardJson = JSON.stringify(agentCard);
 
     // 3. Detect first deploy vs re-deploy
-    const isRedeploy = !!wallet.latestDeploymentTransactionHash;
+    const isRedeploy =
+      !!wallet.latestDeploymentTransactionHash || !!wallet.erc8004AgentId;
 
     // 4. On-chain setup
     const contracts = getErc8004Contracts(chainId);
@@ -438,22 +439,11 @@ export class Erc8004API {
       }
     }
 
-    // 6. Save initial state
-    await this.deploy({
-      workflowId,
-      erc8004AgentId: existingAgentId ?? "",
-      stringifiedAgentCard: agentCardJson,
-      ...(wallet.address ? { walletAddress: wallet.address } : {}),
-      network: "base",
-      chainId,
-      rpcUrl,
-    });
-
-    // 7. Upload to IPFS
+    // 6. Upload to IPFS
     const { url: presignedUrl } = await this.presignIpfsUrl({ workflowId });
     const ipfsCid = await this.uploadToIpfs(agentCardJson, presignedUrl);
 
-    // 8. On-chain registration
+    // 7. On-chain registration
     const walletClient = createWalletClient({
       account,
       chain: viemChain,
@@ -508,7 +498,7 @@ export class Erc8004API {
       txHash = registerHash;
     }
 
-    // 9. Save final state
+    // 8. Save state
     await this.deploy({
       workflowId,
       erc8004AgentId: agentId,
