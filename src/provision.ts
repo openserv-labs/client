@@ -55,7 +55,7 @@ export interface AgentInstance {
  * };
  * ```
  */
-export interface ProvisionConfig {
+interface ProvisionConfigBase {
   /** Agent configuration */
   agent: {
     /**
@@ -122,6 +122,20 @@ export interface ProvisionConfig {
     agentIds?: number[];
   };
 }
+
+/**
+ * Pre-created user API key to skip SIWE authentication.
+ * When the workflow trigger is x402, walletAddress is also required
+ * so the platform knows which wallet to use for payments.
+ */
+interface ProvisionConfigWithCredentials extends ProvisionConfigBase {
+  userApiKey: string;
+  walletAddress?: string;
+}
+
+export type ProvisionConfig =
+  | ProvisionConfigWithCredentials
+  | ProvisionConfigBase;
 
 /**
  * Result from provisioning an agent and workflow.
@@ -713,6 +727,47 @@ async function provisionWorkflow(
 // Main Provision Function
 // ============================================================================
 
+function validateProvisionCredentials(config: ProvisionConfig): void {
+  const hasApiKey = "userApiKey" in config && !!config.userApiKey;
+  const hasWallet = "walletAddress" in config && !!config.walletAddress;
+
+  if (hasWallet && !hasApiKey) {
+    throw new Error("walletAddress requires userApiKey to be provided");
+  }
+
+  if (hasApiKey && !hasWallet && config.workflow.trigger.type === "x402") {
+    throw new Error(
+      "walletAddress is required when using an x402 trigger with userApiKey",
+    );
+  }
+}
+
+async function initializePlatformClient(
+  config: ProvisionConfig,
+): Promise<PlatformClient> {
+  const hasApiKey = "userApiKey" in config && !!config.userApiKey;
+
+  if (hasApiKey) {
+    const { userApiKey, walletAddress } =
+      config as ProvisionConfigWithCredentials;
+    const client = new PlatformClient({ apiKey: userApiKey });
+
+    if (walletAddress) {
+      client.walletAddress = walletAddress;
+    }
+
+    const state = readState();
+    writeState({ ...state, userApiKey });
+
+    return client;
+  }
+
+  const { privateKey } = await getOrCreateWallet();
+  const { client } = await createAuthenticatedClient(privateKey);
+
+  return client;
+}
+
 /**
  * Provision an agent and workflow on the OpenServ platform.
  *
@@ -756,12 +811,9 @@ async function provisionWorkflow(
 export async function provision(
   config: ProvisionConfig,
 ): Promise<ProvisionResult> {
-  // Get or create wallet
-  const { privateKey } = await getOrCreateWallet();
+  validateProvisionCredentials(config);
 
-  // Create authenticated client (reuses saved API key for session continuity)
-  // walletAddress is set on client.walletAddress for x402 resolution
-  const { client } = await createAuthenticatedClient(privateKey);
+  const client = await initializePlatformClient(config);
 
   // Provision agent (returns agentId, apiKey, and authToken)
   const { agentId, apiKey, authToken } = await provisionAgent(
