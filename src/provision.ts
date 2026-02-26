@@ -328,6 +328,40 @@ function writeWalletToEnv(privateKey: string): void {
 }
 
 // ============================================================================
+// State Initialization
+// ============================================================================
+
+/**
+ * Initialize the state file if it doesn't exist yet.
+ *
+ * Reads `OPENSERV_USER_API_KEY` from the environment and seeds
+ * `.openserv.json` with the key plus empty `agents` and `workflows` maps.
+ * If the state file already exists, this is a no-op.
+ */
+function initState(): void {
+  const statePath = path.resolve(process.cwd(), STATE_FILE);
+
+  if (fs.existsSync(statePath)) {
+    return;
+  }
+
+  const userApiKey = process.env.OPENSERV_USER_API_KEY;
+
+  const state: OpenServState = {
+    agents: {},
+    workflows: {},
+  };
+
+  if (userApiKey) {
+    state.userApiKey = userApiKey;
+  }
+
+  writeState(state);
+
+  logger.info("Initialized state file");
+}
+
+// ============================================================================
 // Wallet Management
 // ============================================================================
 
@@ -761,6 +795,8 @@ async function initializePlatformClient(
 
     return client;
   }
+
+  initState();
 
   const { privateKey } = await getOrCreateWallet();
   const { client } = await createAuthenticatedClient(privateKey);
