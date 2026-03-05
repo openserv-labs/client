@@ -719,6 +719,83 @@ triggers.manual({
 // { type: 'manual', name: '...', description: '...' }
 ```
 
+## Deploy to OpenServ Cloud
+
+Deploy your agent to the OpenServ managed cloud with a single command:
+
+```bash
+npx @openserv-labs/client deploy [path]
+```
+
+Where `[path]` is the directory containing your agent code (defaults to current directory).
+
+### Prerequisites
+
+1. **`OPENSERV_USER_API_KEY` in `.env`** — The deploy CLI needs this key to authenticate with the platform. If you've already run `provision()` at least once, check your `.openserv.json` file — it contains a `userApiKey` field you can use:
+
+   ```bash
+   # Look for the userApiKey in .openserv.json
+   cat .openserv.json | grep userApiKey
+   ```
+
+   Copy that value into your `.env`:
+
+   ```env
+   OPENSERV_USER_API_KEY=<userApiKey from .openserv.json>
+   ```
+
+   If you haven't provisioned yet, get the key from the [OpenServ platform dashboard](https://platform.openserv.ai/profile/api-keys) instead.
+
+2. **Run `provision()` first** — Your agent must be provisioned at least once before deploying. `provision()` registers the agent on the platform and writes credentials to `.openserv.json`. Starting the agent locally (`npm run dev`) is enough if your code calls `provision()` before `run(agent)`.
+
+### How It Works
+
+The deploy command:
+
+1. Reads `.openserv.json` to find the provisioned agent ID
+2. Creates or reuses a cloud container (saves `OPENSERV_CONTAINER_ID` to `.env`)
+3. Archives your source code (respects `.gitignore`, excludes `node_modules`, `.git`, `.env`, `dist`)
+4. Uploads and installs dependencies in the container
+5. Starts (or restarts) the agent and exposes a public URL
+6. Updates the agent's endpoint URL on the platform automatically
+
+### Deploy Workflow
+
+```bash
+# 1. Run locally once to provision (registers agent + writes .openserv.json)
+npm run dev
+
+# 2. Set OPENSERV_USER_API_KEY in .env
+#    - If you already provisioned: grab userApiKey from .openserv.json
+#    - Otherwise: get it from the platform dashboard
+echo "OPENSERV_USER_API_KEY=your-key" >> .env
+
+# 3. Deploy to cloud
+npx @openserv-labs/client deploy .
+```
+
+On subsequent deploys, the CLI reuses the existing container — it uploads your latest code, reinstalls dependencies, and restarts the agent.
+
+### Environment Variables for Deploy
+
+| Variable                    | Description                              | Required |
+| --------------------------- | ---------------------------------------- | -------- |
+| `OPENSERV_USER_API_KEY`     | Your OpenServ user API key               | Yes      |
+| `OPENSERV_CONTAINER_ID`     | Container ID (auto-set after first deploy) | No       |
+
+### CLI Reference
+
+The package also exposes a `serv` binary:
+
+```bash
+# Via npx
+npx @openserv-labs/client deploy [path]
+
+# Or if installed globally / as a dependency
+serv deploy [path]
+serv --help
+```
+
 ## Environment Variables
 
 | Variable                | Description                           | Required                     |
