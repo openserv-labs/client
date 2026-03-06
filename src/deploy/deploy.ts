@@ -2,7 +2,6 @@ import path from "node:path";
 import { ApiClient } from "./api-client.js";
 import { readEnv, writeContainerId } from "./env.js";
 import { logger } from "./logger.js";
-import { readAgentConfig } from "./openserv-json.js";
 import { createTarBuffer } from "./tar.js";
 
 interface ResolvedContainer {
@@ -14,28 +13,13 @@ async function resolveContainer(
   client: ApiClient,
   dir: string,
   containerId: string | undefined,
-  agentId: number | undefined,
 ): Promise<ResolvedContainer> {
   if (containerId) {
     logger.info(`Using existing container: ${containerId}`);
     return { id: containerId, isFirstDeploy: false };
   }
 
-  if (agentId) {
-    logger.info(
-      `Agent ID found: ${agentId}. Checking for existing container...`,
-    );
-    const existing = await client.findContainerByAgent(agentId);
-    if (existing) {
-      writeContainerId(dir, existing.id);
-      logger.info(`  Found container: ${existing.id}`);
-      logger.info("  Saved to .env\n");
-      return { id: existing.id, isFirstDeploy: false };
-    }
-    logger.info("  No container found. Creating new container...");
-  } else {
-    logger.info("Creating new container...");
-  }
+  logger.info("Creating new container...");
 
   const container = await client.createContainer();
   writeContainerId(dir, container.id);
@@ -49,8 +33,6 @@ export async function deploy(targetPath: string): Promise<void> {
   logger.info(`Deploying from ${dir}\n`);
 
   const env = readEnv(dir);
-  const agentConfig = readAgentConfig(dir);
-  const agentId = agentConfig?.id;
 
   if (!env.apiKey) {
     throw new Error(
@@ -60,7 +42,6 @@ export async function deploy(targetPath: string): Promise<void> {
 
   const client = new ApiClient({
     apiKey: env.apiKey,
-    agentId,
     orchestratorUrl: env.orchestratorUrl,
   });
 
@@ -68,7 +49,6 @@ export async function deploy(targetPath: string): Promise<void> {
     client,
     dir,
     env.containerId,
-    agentId,
   );
 
   let currentStatus: string | undefined;
@@ -143,16 +123,6 @@ export async function deploy(targetPath: string): Promise<void> {
       publicUrl = `https://${appName}.fly.dev`;
     }
     logger.info("\nAlready live.");
-  }
-
-  if (agentConfig?.apiKey && agentConfig.id && publicUrl) {
-    logger.info("\nUpdating agent endpoint URL...");
-    await client.updateEndpointUrl(
-      agentConfig.id,
-      agentConfig.apiKey,
-      publicUrl,
-    );
-    logger.info(`  Agent endpoint set to ${publicUrl}`);
   }
 
   logger.info("\nDeploy complete!");

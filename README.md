@@ -757,7 +757,6 @@ The deploy command:
 3. Archives your source code (respects `.gitignore`, excludes `node_modules`, `.git`, `.env`, `dist`)
 4. Uploads and installs dependencies in the container
 5. Starts (or restarts) the agent and exposes a public URL
-6. Updates the agent's endpoint URL on the platform automatically
 
 ### Deploy Workflow
 

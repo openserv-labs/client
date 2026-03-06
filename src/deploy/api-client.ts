@@ -14,7 +14,6 @@ export class ApiError extends Error {
 
 export interface ApiClientOptions {
   apiKey: string;
-  agentId?: number;
   orchestratorUrl?: string;
 }
 
@@ -51,9 +50,6 @@ export class ApiClient {
     const headers: Record<string, string> = {
       "x-openserv-key": opts.apiKey,
     };
-    if (opts.agentId != null) {
-      headers["x-openserv-agent-id"] = String(opts.agentId);
-    }
 
     this.client = axios.create({
       baseURL: opts.orchestratorUrl || DEFAULT_ORCHESTRATOR_URL,
@@ -69,21 +65,6 @@ export class ApiClient {
 
   async getStatus(id: string): Promise<StatusInfo> {
     return this.request<StatusInfo>("GET", `/container/${id}/status`);
-  }
-
-  async findContainerByAgent(agentId: number): Promise<ContainerInfo | null> {
-    try {
-      const status = await this.getStatus(String(agentId));
-      return {
-        id: status.id,
-        appName: status.appName,
-        machineId: status.machineId,
-        status: status.status,
-      };
-    } catch (err) {
-      if (err instanceof ApiError && err.statusCode === 404) return null;
-      throw err;
-    }
   }
 
   async upload(id: string, tarBuffer: Buffer): Promise<void> {
