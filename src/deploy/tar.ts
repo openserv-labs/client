@@ -9,7 +9,6 @@ const ALWAYS_EXCLUDE = [
   "dist",
   ".next",
   ".turbo",
-  ".env",
   ".env.example",
   ".env.local",
   ".env.*.local",
