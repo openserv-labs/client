@@ -1,4 +1,6 @@
+import { printBanner } from "../banner.js";
 import { deploy } from "./deploy.js";
+import { logger } from "./logger.js";
 
 const HELP = `
 Usage: serv <command> [path]
@@ -16,6 +18,8 @@ Environment variables (set in .env or shell):
 `.trim();
 
 async function main() {
+  printBanner();
+
   const args = process.argv.slice(2);
 
   if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -39,6 +43,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("\nFailed:", err instanceof Error ? err.message : err);
+  logger.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
 });
