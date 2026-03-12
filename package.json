@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "serv": "./dist/cli.js"
+    "serv": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
@@ -19,7 +19,7 @@
     "format:check": "prettier --check \"**/*.{ts,json,md}\"",
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:unit": "node --import tsx --test test/unit/**/*.test.ts",
-    "deploy": "tsx src/cli.ts deploy"
+    "deploy": "tsx src/cli/index.ts deploy"
   },
   "repository": {
     "type": "git",
