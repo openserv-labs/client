@@ -1,6 +1,6 @@
 import axios, { type AxiosError, type AxiosInstance } from "axios";
 
-const DEFAULT_ORCHESTRATOR_URL = "https://agent-orchestrator.openserv.ai";
+const ORCHESTRATOR_URL = "https://agent-orchestrator.openserv.ai";
 
 export class ApiError extends Error {
   constructor(
@@ -14,7 +14,6 @@ export class ApiError extends Error {
 
 export interface ApiClientOptions {
   apiKey: string;
-  orchestratorUrl?: string;
 }
 
 export interface ContainerInfo {
@@ -52,7 +51,7 @@ export class ApiClient {
     };
 
     this.client = axios.create({
-      baseURL: opts.orchestratorUrl || DEFAULT_ORCHESTRATOR_URL,
+      baseURL: ORCHESTRATOR_URL,
       headers,
       maxBodyLength: 100 * 1024 * 1024,
       maxContentLength: 100 * 1024 * 1024,
