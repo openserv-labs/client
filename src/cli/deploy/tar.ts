@@ -3,6 +3,7 @@ import path from "node:path";
 import ignore, { type Ignore } from "ignore";
 import { createTarGzip } from "nanotar";
 
+// Checked separately from .gitignore so a negation there cannot re-include these
 const ALWAYS_EXCLUDE = [
   "node_modules",
   ".git",
@@ -16,6 +17,10 @@ const ALWAYS_EXCLUDE = [
 
 const ALWAYS_EXCLUDE_EXTENSIONS = [".tsbuildinfo"];
 
+// Root-level files the container needs, uploaded even when .gitignore covers them:
+// .env carries the agent's API keys and secrets, .openserv.json its provisioned identity.
+const FORCE_INCLUDE = [".env", ".openserv.json"];
+
 interface TarEntry {
   name: string;
   data: Uint8Array;
@@ -24,29 +29,34 @@ interface TarEntry {
 export interface TarResult {
   buffer: Buffer;
   files: string[];
+  hasEnv: boolean;
 }
 
 export async function createTarBuffer(dir: string): Promise<TarResult> {
-  const ig = ignore();
-  ig.add(ALWAYS_EXCLUDE);
+  const always = ignore().add(ALWAYS_EXCLUDE);
 
+  const gitIgnored = ignore();
   const gitignorePath = path.join(dir, ".gitignore");
   if (fs.existsSync(gitignorePath)) {
-    const content = fs.readFileSync(gitignorePath, "utf8");
-    ig.add(content);
+    gitIgnored.add(fs.readFileSync(gitignorePath, "utf8"));
   }
 
-  const entries = collectEntries(dir, dir, ig);
+  const entries = collectEntries(dir, dir, always, gitIgnored);
   const files = entries.map((e) => e.name);
 
   const gzipped = await createTarGzip(entries);
-  return { buffer: Buffer.from(gzipped), files };
+  return {
+    buffer: Buffer.from(gzipped),
+    files,
+    hasEnv: files.includes(".env"),
+  };
 }
 
 function collectEntries(
   baseDir: string,
   currentDir: string,
-  ig: Ignore,
+  always: Ignore,
+  gitIgnored: Ignore,
 ): TarEntry[] {
   const entries: TarEntry[] = [];
   const items = fs.readdirSync(currentDir, { withFileTypes: true });
@@ -60,12 +70,15 @@ function collectEntries(
     }
 
     const testPath = item.isDirectory() ? `${relativePath}/` : relativePath;
-    if (ig.ignores(testPath)) {
+    if (always.ignores(testPath)) {
+      continue;
+    }
+    if (gitIgnored.ignores(testPath) && !FORCE_INCLUDE.includes(relativePath)) {
       continue;
     }
 
     if (item.isDirectory()) {
-      entries.push(...collectEntries(baseDir, fullPath, ig));
+      entries.push(...collectEntries(baseDir, fullPath, always, gitIgnored));
     } else {
       entries.push({
         name: relativePath,

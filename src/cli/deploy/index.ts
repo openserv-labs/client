@@ -14,7 +14,11 @@ Options:
 Environment variables (set in .env or shell):
   OPENSERV_USER_API_KEY       Your OpenServ API key (required)
   OPENSERV_CONTAINER_ID       Container ID for redeployment (auto-set after first deploy)
-  OPENSERV_ORCHESTRATOR_URL   Custom orchestrator URL (optional)
+
+Files:
+  .env            Uploaded as the container's .env, so the deployed agent gets the same
+                  API keys and secrets it uses locally (.env.local and .env.example are not)
+  .openserv.json  Uploaded so the container reuses its provisioned agent identity
 `.trim();
 
 async function main() {

@@ -47,10 +47,7 @@ export async function deploy(targetPath: string): Promise<void> {
     );
   }
 
-  const client = new ApiClient({
-    apiKey: env.apiKey,
-    orchestratorUrl: env.orchestratorUrl,
-  });
+  const client = new ApiClient({ apiKey: env.apiKey });
 
   const { id: targetId, isFirstDeploy } = await resolveContainer(
     client,
@@ -70,10 +67,17 @@ export async function deploy(targetPath: string): Promise<void> {
   }
 
   logger.step("Creating archive...");
-  const { buffer: tarBuffer, files } = await createTarBuffer(dir);
+  const { buffer: tarBuffer, files, hasEnv } = await createTarBuffer(dir);
   logger.detail(
     `${files.length} files, ${(tarBuffer.length / 1024).toFixed(1)} KB`,
   );
+  if (hasEnv) {
+    logger.detail("Uploading .env as the container's environment");
+  } else {
+    logger.detail(
+      "No .env found. Any API keys or secrets your agent needs must be in .env to reach the container.",
+    );
+  }
 
   const uploadSpin = logger.spin("Uploading files...");
   try {

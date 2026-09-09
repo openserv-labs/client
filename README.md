@@ -731,7 +731,9 @@ Where `[path]` is the directory containing your agent code (defaults to current 
 
 ### Prerequisites
 
-1. **`OPENSERV_USER_API_KEY` in `.env`** — The deploy CLI needs this key to authenticate with the platform. If you've already run `provision()` at least once, check your `.openserv.json` file — it contains a `userApiKey` field you can use:
+1. **`OPENSERV_USER_API_KEY` in `.env`** — The deploy CLI needs this key to authenticate with the platform. It reads `.env` in the target directory first and falls back to the shell environment, so a value in `.env` wins over one exported in your shell. Prefer `.env`: a key that only lives in your shell authenticates the CLI but never reaches the container, and the agent needs it there too (see [Why your `.env` is uploaded](#why-your-env-is-uploaded)).
+
+   If you've already run `provision()` at least once, check your `.openserv.json` file — it contains a `userApiKey` field you can use:
 
    ```bash
    # Look for the userApiKey in .openserv.json
@@ -746,17 +748,48 @@ Where `[path]` is the directory containing your agent code (defaults to current 
 
    If you haven't provisioned yet, get the key from the [OpenServ platform dashboard](https://platform.openserv.ai/profile/api-keys) instead.
 
-2. **Run `provision()` first** — Your agent must be provisioned at least once before deploying. `provision()` registers the agent on the platform and writes credentials to `.openserv.json`. Starting the agent locally (`npm run dev`) is enough if your code calls `provision()` before `run(agent)`.
+2. **Your entry file must be `src/agent.ts`** — the container is started with a hardcoded `npx tsx src/agent.ts`; the CLI has no flag for overriding it. Add `tsx` to your project's dependencies so the container doesn't fetch it on every start. Nothing is compiled during deploy — your TypeScript runs directly under `tsx`.
+
+3. **Run `provision()` first** — `provision()` registers the agent on the platform and writes its ID and API key to `.openserv.json`. Starting the agent locally (`npm run dev`) is enough if your code calls `provision()` before `run(agent)`. Deploy itself never reads `.openserv.json` and won't stop you if it's missing — but the file is uploaded with your code, and without it the `provision()` call inside the container registers a *new* agent on first start instead of reusing yours.
 
 ### How It Works
 
 The deploy command:
 
-1. Reads `.openserv.json` to find the provisioned agent ID
-2. Creates or reuses a cloud container (saves `OPENSERV_CONTAINER_ID` to `.env`)
-3. Archives your source code (respects `.gitignore`, excludes `node_modules`, `.git`, `.env`, `dist`)
-4. Uploads and installs dependencies in the container
-5. Starts (or restarts) the agent and exposes a public URL
+1. Reads `OPENSERV_USER_API_KEY` from `.env` (or the shell environment) and authenticates against the agent orchestrator at `https://agent-orchestrator.openserv.ai`
+2. Creates a new container, or reuses the one named by `OPENSERV_CONTAINER_ID`. On creation the ID is written to `.env` *before* the archive is built, so the container ships with its own ID
+3. Archives the directory into a gzipped tar (see [What gets archived](#what-gets-archived)); the upload is capped at 100 MB
+4. Uploads the archive to `/app` in the container, verifies it landed, then runs `npm install` there (a plain `npm install`, whichever lockfile your project uses, with a 10-minute timeout)
+5. Starts the container with `npx tsx src/agent.ts` on a first deploy — or when the existing container reports status `ready`, or when its status can't be read — and restarts it in every other case
+6. Marks the container live in `continuous` mode, so it keeps running rather than spinning up per request
+
+Note that the CLI does not print a public URL for the container. The deployed agent becomes reachable the same way it does locally: `provision()` and `run(agent)` set the agent's `endpoint_url` on the platform when the container starts.
+
+#### What gets archived
+
+- **Always excluded**, whether or not `.gitignore` mentions them, and not re-includable by a `!` negation in `.gitignore`: `node_modules`, `.git`, `dist`, `.next`, `.turbo`, `.env.example`, `.env.local`, `.env.*.local`, and any file ending in `.tsbuildinfo`.
+- **Always included**, even when `.gitignore` covers them: `.env` and `.openserv.json`. This applies to the project root only — a `.env` inside a subdirectory is not rescued from `.gitignore`.
+- **Everything else**: `.gitignore` decides.
+
+#### Why your `.env` is uploaded
+
+Uploading `.env` is the common — and currently the only — way to get API keys, secrets and other configuration into your agent's container. The container has no secret store of its own and no dashboard for setting variables, so whatever your agent needs at runtime has to travel with the archive, and `.env` is the file it travels in.
+
+Concretely: if your agent calls ElevenLabs, then `ELEVENLABS_API_KEY` must be in `.env`. Deploy uploads that `.env` to the container instance, where the agent reads it exactly the way it does locally:
+
+```env
+# .env
+ELEVENLABS_API_KEY=...
+OPENAI_API_KEY=sk-...
+WALLET_PRIVATE_KEY=0x...
+OPENSERV_USER_API_KEY=...
+```
+
+Because your project almost certainly lists `.env` in `.gitignore`, deploy treats it as a special case: `.gitignore` is respected for everything else, but root-level `.env` (and `.openserv.json`) are uploaded anyway. `.env.local`, `.env.*.local` and `.env.example` are never uploaded — keep machine-only values there if you want them to stay on your machine. Deploy tells you which case you're in: it logs whether it's uploading a `.env` or didn't find one.
+
+The practical consequence is that your local `.env` and the container's environment are the same thing. Anything in it, including `OPENSERV_USER_API_KEY` and the auto-written `OPENSERV_CONTAINER_ID`, ends up in the container. That is intentional for the keys the agent needs; if a value must never leave your machine, it does not belong in `.env`.
+
+`.openserv.json` is uploaded for the same reason: the agent reuses its provisioned ID and user API key instead of registering a new agent on start. If `WALLET_PRIVATE_KEY` is not in `.env`, `provision()` generates a fresh wallet inside the container and writes it to the container's own `.env` — so the deployed agent authenticates from a different wallet address than your local one, which matters if you rely on that address for x402 payments or top-ups.
 
 ### Deploy Workflow
 
@@ -769,7 +802,10 @@ npm run dev
 #    - Otherwise: get it from the platform dashboard
 echo "OPENSERV_USER_API_KEY=your-key" >> .env
 
-# 3. Deploy to cloud
+# 3. Put every key your agent needs at runtime in .env — it is uploaded to the container
+echo "ELEVENLABS_API_KEY=..." >> .env
+
+# 4. Deploy to cloud
 npx @openserv-labs/client deploy .
 ```
 
@@ -777,10 +813,10 @@ On subsequent deploys, the CLI reuses the existing container — it uploads your
 
 ### Environment Variables for Deploy
 
-| Variable                    | Description                              | Required |
-| --------------------------- | ---------------------------------------- | -------- |
-| `OPENSERV_USER_API_KEY`     | Your OpenServ user API key               | Yes      |
-| `OPENSERV_CONTAINER_ID`     | Container ID (auto-set after first deploy) | No       |
+| Variable                | Description                                                 | Required |
+| ----------------------- | ----------------------------------------------------------- | -------- |
+| `OPENSERV_USER_API_KEY` | Your OpenServ user API key                                  | Yes      |
+| `OPENSERV_CONTAINER_ID` | Container ID (auto-written to `.env` after the first deploy) | No       |
 
 ### CLI Reference
 
@@ -797,11 +833,14 @@ serv --help
 
 ## Environment Variables
 
-| Variable                | Description                           | Required                     |
-| ----------------------- | ------------------------------------- | ---------------------------- |
-| `OPENSERV_USER_API_KEY` | Your OpenServ user API key            | For most API operations      |
-| `OPENSERV_API_URL`      | Custom API URL (for testing)          | No                           |
-| `WALLET_PRIVATE_KEY`    | Wallet private key for blockchain ops | For top-up and x402 payments |
+| Variable                | Description                                                                       | Required                     |
+| ----------------------- | --------------------------------------------------------------------------------- | ---------------------------- |
+| `OPENSERV_USER_API_KEY` | Your OpenServ user API key                                                        | For most API operations      |
+| `OPENSERV_API_URL`      | Custom API URL (for testing)                                                      | No                           |
+| `WALLET_PRIVATE_KEY`    | Wallet private key for blockchain ops (`provision()` generates one if it's unset)  | For top-up and x402 payments |
+| `AGENT_ENDPOINT_URL`    | Endpoint URL `provision()` registers when `agent.endpointUrl` is not passed        | No                           |
+
+See [Environment Variables for Deploy](#environment-variables-for-deploy) for the variables the `serv deploy` CLI reads.
 
 **Authentication options:**
 

@@ -5,7 +5,6 @@ import { config as loadDotenv } from "dotenv";
 export interface EnvValues {
   apiKey?: string;
   containerId?: string;
-  orchestratorUrl?: string;
 }
 
 export function readEnv(dir: string): EnvValues {
@@ -17,8 +16,6 @@ export function readEnv(dir: string): EnvValues {
   return {
     apiKey: env.OPENSERV_USER_API_KEY || process.env.OPENSERV_USER_API_KEY,
     containerId: env.OPENSERV_CONTAINER_ID || process.env.OPENSERV_CONTAINER_ID,
-    orchestratorUrl:
-      env.OPENSERV_ORCHESTRATOR_URL || process.env.OPENSERV_ORCHESTRATOR_URL,
   };
 }
 
